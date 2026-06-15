@@ -76,21 +76,9 @@ def run_analyzer():
     st.markdown("""
     ### 🚀 启动分析器
     
-    请选择以下任一方式启动分析器:
-    
-    #### 方法1: 命令行启动(推荐)
     打开新的终端窗口,运行:
     ```bash
     streamlit run ipc_analyzer.py --server.port 8502
-    ```
-    
-    #### 方法2: 使用启动脚本
-    - **Windows**: 双击运行 `run_ipc_analysis.bat`
-    - **Linux/Mac**: 运行 `./run_ipc_analysis.sh`
-    
-    #### 方法3: Python命令
-    ```bash
-    python ipc_analyzer.py
     ```
     
     ---
@@ -152,13 +140,8 @@ def main():
         st.warning(f"⚠️ {data_message}")
         st.info("""
         **如何生成测试数据?**
-        
-        请在各语言目录下运行对应的测试程序:
-        - **Go**: `cd Go && go run main.go`
-        - **C++**: `cd Cpp && ./run_test.bat` (Windows) 或 `./run_test.sh` (Linux/Mac)
-        - **Java**: `cd Java && javac src/Main.java && java -cp src Main`
-        - **Python**: `cd Python && python main.py`
-        
+    
+        请在各语言目录下运行对应的测试程序，具体请查看各程序的说明文件。
         测试完成后,数据将自动保存到 `csv/` 目录
         """)
     
@@ -201,7 +184,7 @@ def main():
     ### 使用步骤:
     
     1. **准备数据**: 确保已运行各语言的IPC性能测试程序,生成了CSV数据文件
-    2. **启动分析器**: 点击"启动IPC性能分析器"按钮
+    2. **启动分析器**:按照指引启动数据分析器
     3. **配置筛选**: 在左侧边栏选择要分析的语言、消息大小、并发数等参数
     4. **查看结果**: 在四个Tab页签中查看不同类型的分析结果
     5. **导出数据**: 在"详细数据表"中可以下载筛选后的数据
