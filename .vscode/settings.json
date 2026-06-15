@@ -1,0 +1,7 @@
+{
+  "java.project.sourcePaths": [
+    "Java/src/ipc",
+    "Java/src"
+  ],
+  "java.dependency.syncWithFolderExplorer": true
+}
