@@ -108,11 +108,11 @@ public class Main {
                     
                     // 短暂等待，避免资源竞争
                     try {
-                        Thread.sleep(200);
+                        Thread.sleep(50);
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                     }
-                    
+
                     // 测试2: Socket IPC
                     System.out.println("[2/3] 测试Socket IPC...");
                     testCount++;
@@ -143,11 +143,11 @@ public class Main {
                     
                     // 短暂等待
                     try {
-                        Thread.sleep(200);
+                        Thread.sleep(50);
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                     }
-                    
+
                     // 测试3: TCP Socket
                     System.out.println("[3/3] 测试TCP Socket...");
                     testCount++;
@@ -176,9 +176,9 @@ public class Main {
                         MetricsUtils.saveToCSV(failedMetrics, "ipc_performance_java.csv");
                     }
                     
-                    // 每次完整测试后等待
+                    // 每次完整测试后短暂等待
                     try {
-                        Thread.sleep(500);
+                        Thread.sleep(100);
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                     }

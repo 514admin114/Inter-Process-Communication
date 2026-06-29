@@ -162,10 +162,11 @@ public class SocketIPC {
         // 启动服务器接受连接（在单独的线程中）
         CountDownLatch acceptDone = new CountDownLatch(1);
         CountDownLatch serverReady = new CountDownLatch(1);
-        
+        CountDownLatch producersDone = new CountDownLatch(producers);
+
         executor.submit(() -> {
             serverReady.countDown(); // 立即发出就绪信号
-            
+
             // 接受producers个连接（每个Producer一个连接）
             for (int i = 0; i < producers; i++) {
                 try {
@@ -179,55 +180,61 @@ public class SocketIPC {
             }
             acceptDone.countDown();
         });
-        
+
         // 等待服务器准备好
         try {
             serverReady.await();
-            Thread.sleep(300); // 额外等待确保完全就绪
+            Thread.sleep(50); // 短暂等待确保 accept 循环已进入阻塞状态
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        
+
         // 解析地址获取端口
         String[] parts = socketIPC.address.split(":");
         int port = Integer.parseInt(parts[1]);
-        
-        // 启动生产者
+
+        // 启动生产者，每个生产者完成时调用 producersDone.countDown()
         for (int i = 0; i < producers; i++) {
             final int producerId = i;
-            executor.submit(() -> producer(producerId, "127.0.0.1", port, 
-                                          messagesPerProducer, messageSize, 
-                                          latencies, latencies));
+            executor.submit(() -> {
+                try {
+                    producer(producerId, "127.0.0.1", port,
+                             messagesPerProducer, messageSize,
+                             latencies, latencies);
+                } finally {
+                    producersDone.countDown();
+                }
+            });
         }
-        
-        // 等待所有生产者完成（简化处理，实际应该用更复杂的同步机制）
+
+        // 精确等待所有生产者完成，而非盲等
         try {
-            Thread.sleep(2000); // 给生产者足够时间完成
+            producersDone.await(30, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        
-        // 给最后的消息一些时间被Accept
+
+        // 短暂等待确保消费者处理完最后的消息
         try {
-            Thread.sleep(500);
+            Thread.sleep(100);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        
+
         // 关闭listener，停止接受新连接
         try {
             listener.close();
         } catch (IOException e) {
             // 忽略关闭异常
         }
-        
+
         // 等待Accept线程结束
         try {
             acceptDone.await(30, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        
+
         // 关闭executor
         executor.shutdown();
         try {
