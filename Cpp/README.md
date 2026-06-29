@@ -50,12 +50,6 @@ g++ main.cpp -o main.exe -lws2_32
 .\main.exe
 ```
 
-**Linux/Mac:**
-```bash
-g++ -std=c++17 -O2 -I. -pthread -o ipc_test main.cpp
-./ipc_test
-```
-
 ---
 
 ## 📈 测试配置
@@ -121,7 +115,6 @@ streamlit run ipc_analyzer.py
 
 ### Socket IPC
 - **Windows**: TCP localhost(模拟Named Pipe)
-- **Linux/Mac**: Unix Domain Socket
 - 长连接复用(每个生产者一个连接)
 
 ### TCP Socket

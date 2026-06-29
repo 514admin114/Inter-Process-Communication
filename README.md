@@ -101,12 +101,6 @@ g++ main.cpp -o main.exe -lws2_32
 .\main.exe
 ```
 
-**Linux/Mac:**
-```bash
-g++ -std=c++17 -O2 -I. -pthread -o ipc_test main.cpp
-./ipc_test
-```
-
 📖 [C++版本详细说明](Cpp/README.md)
 
 ### ☕ Java版本
@@ -131,11 +125,6 @@ cd Python
 python main.py
 ```
 
-**Linux/Mac:**
-```bash
-cd Python
-python3 main.py
-```
 📖 [Python版本详细说明](Python/README.md)
 
 ---
