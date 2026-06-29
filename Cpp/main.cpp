@@ -50,13 +50,12 @@ int main() {
     config.consumerCounts = {1, 2, 4};          // 1, 2, 4 consumers
     config.messagesPerProd = 500;               // 500 messages per producer (simplified)
 
-    // 如需完整测试，使用以下配置：
-    /*
-    config.messageSizes = {64, 256, 1024, 4096};  // 4种大小
-    config.producerCounts = {1, 2, 4, 8};         // 4种数量
-    config.consumerCounts = {1, 2, 4, 8};         // 4种数量
-    config.messagesPerProd = 1000;                 // 1000条消息
-    */
+    // // 如需完整测试，使用以下配置：
+    // config.messageSizes = {64, 256, 1024, 4096};  // 4种大小
+    // config.producerCounts = {1, 2, 4, 8};         // 4种数量
+    // config.consumerCounts = {1, 2, 4, 8};         // 4种数量
+    // config.messagesPerProd = 1000;                 // 1000条消息
+    
 
     std::cout << "Test Configuration:" << std::endl;
     std::cout << "- Message Sizes: ";
