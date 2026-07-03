@@ -10,6 +10,7 @@
 #include <chrono>
 #include <ctime>
 #include <sys/stat.h>
+#include <cstdlib>
 
 #ifdef _WIN32
     #include <direct.h>
@@ -18,6 +19,10 @@
     #include <sys/stat.h>
     #define MKDIR(path) mkdir(path, 0755)
 #endif
+
+// Error injection rate: probability a message gets corrupted
+#define ERROR_RATE 0.01
+#define MAX_RETRANSMIT 3
 
 struct PerformanceMetrics {
     std::string ipcType;        // IPC type: shared_memory, socket, tcp
@@ -31,13 +36,24 @@ struct PerformanceMetrics {
     double avgLatency;          // Average latency in microseconds
     double p95Latency;          // P95 latency in microseconds
     double p99Latency;          // P99 latency in microseconds
+    int errorCount;             // Number of corrupted messages detected
+    int retransmitCount;        // Number of retransmissions performed
+    double accuracy;            // Data accuracy rate (%): percentage of messages without errors
     std::string timestamp;      // Timestamp
     bool success;               // Whether test succeeded
 };
 
+// Utility: compute additive checksum (sum of all bytes modulo 2^32)
+inline uint32_t computeChecksum(const char* data, size_t len) {
+    uint32_t sum = 0;
+    for (size_t i = 0; i < len; i++) {
+        sum += static_cast<uint8_t>(data[i]);
+    }
+    return sum;
+}
+
 class MetricsUtils {
 public:
-    // Ensure data directory exists
     static bool ensureDataDir() {
         std::string dataDir = "../csv";
         
@@ -50,11 +66,9 @@ public:
             return false;
         }
 #endif
-        
         return true;
     }
     
-    // Get current timestamp as string
     static std::string getCurrentTimestamp() {
         auto now = std::chrono::system_clock::now();
         auto time_t_now = std::chrono::system_clock::to_time_t(now);
@@ -71,32 +85,24 @@ public:
         return oss.str();
     }
     
-    // Calculate percentile from sorted latencies
     static double calculatePercentile(std::vector<double>& latencies, double percentile) {
         if (latencies.empty()) {
             return 0.0;
         }
-        
-        // Sort latencies
         std::sort(latencies.begin(), latencies.end());
-        
         size_t index = static_cast<size_t>(latencies.size() * percentile / 100.0);
         if (index >= latencies.size()) {
             index = latencies.size() - 1;
         }
-        
         return latencies[index];
     }
     
-    // Save metrics to CSV file
     static bool saveToCSV(const PerformanceMetrics& metrics, const std::string& filename) {
         if (!ensureDataDir()) {
             return false;
         }
         
         std::string filePath = "../csv/" + filename;
-        
-        // Check if file exists
         bool fileExists = true;
         std::ifstream testFile(filePath);
         if (!testFile.good()) {
@@ -104,20 +110,18 @@ public:
         }
         testFile.close();
         
-        // Open file in append mode
         std::ofstream file(filePath, std::ios::app);
         if (!file.is_open()) {
             return false;
         }
         
-        // Write header if file is new
         if (!fileExists) {
             file << "Timestamp,IPC_Type,Pattern,Producer_Count,Consumer_Count,"
                  << "Message_Count,Message_Size,Total_Time_Seconds,Throughput_Msg_Per_Sec,"
-                 << "Avg_Latency_Microseconds,P95_Latency_Microseconds,P99_Latency_Microseconds,Success\n";
+                 << "Avg_Latency_Microseconds,P95_Latency_Microseconds,P99_Latency_Microseconds,"
+                 << "Error_Count,Retransmit_Count,Accuracy,Success\n";
         }
         
-        // Write data row
         file << metrics.timestamp << ","
              << metrics.ipcType << ","
              << metrics.pattern << ","
@@ -130,13 +134,15 @@ public:
              << std::fixed << std::setprecision(2) << metrics.avgLatency << ","
              << std::fixed << std::setprecision(2) << metrics.p95Latency << ","
              << std::fixed << std::setprecision(2) << metrics.p99Latency << ","
+             << metrics.errorCount << ","
+             << metrics.retransmitCount << ","
+             << std::fixed << std::setprecision(2) << metrics.accuracy << ","
              << (metrics.success ? "true" : "false") << "\n";
         
         file.close();
         return true;
     }
     
-    // Append statistics to end of CSV file
     static bool appendStatistics(const std::string& filename, 
                                  int totalTests, 
                                  int successTests, 
@@ -146,16 +152,12 @@ public:
         }
         
         std::string filePath = "../csv/" + filename;
-        
         std::ofstream file(filePath, std::ios::app);
         if (!file.is_open()) {
             return false;
         }
         
-        // Write blank line separator
         file << "\n";
-        
-        // Write statistics in English
         double successRate = (totalTests > 0) ? 
             (static_cast<double>(successTests) / totalTests * 100.0) : 0.0;
         

@@ -1,6 +1,12 @@
 import os
 import csv
+import random
+import struct
 from datetime import datetime
+
+# Error injection constants
+ERROR_RATE = 0.01
+MAX_RETRANSMIT = 3
 
 
 class PerformanceMetrics:
@@ -18,8 +24,16 @@ class PerformanceMetrics:
         self.avg_latency = 0.0    # 平均延迟(微秒)
         self.p95_latency = 0.0    # P95延迟(微秒)
         self.p99_latency = 0.0    # P99延迟(微秒)
+        self.error_count = 0      # 检测到的错误消息数
+        self.retransmit_count = 0 # 重传次数
+        self.accuracy = 0.0      # 数据传输准确率(%): 无错误传输的消息百分比
         self.timestamp = ""       # 时间戳
         self.success = False      # 测试是否成功
+
+
+def compute_checksum(data):
+    """Compute additive checksum (sum of all bytes modulo 2^32)"""
+    return sum(data) & 0xFFFFFFFF
 
 
 def ensure_data_dir():
@@ -43,7 +57,6 @@ def calculate_percentile(latencies, percentile):
     if not latencies:
         return 0.0
     
-    # 排序
     sorted_latencies = sorted(latencies)
     
     index = int(len(sorted_latencies) * percentile / 100.0)
@@ -65,7 +78,6 @@ def save_to_csv(metrics, filename):
         with open(file_path, 'a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             
-            # 如果文件不存在，写入表头
             if not file_exists:
                 writer.writerow([
                     "Timestamp", "IPC_Type", "Pattern",
@@ -73,10 +85,10 @@ def save_to_csv(metrics, filename):
                     "Message_Count", "Message_Size",
                     "Total_Time_Seconds", "Throughput_Msg_Per_Sec",
                     "Avg_Latency_Microseconds", "P95_Latency_Microseconds",
-                    "P99_Latency_Microseconds", "Success"
+                    "P99_Latency_Microseconds", "Error_Count", "Retransmit_Count",
+                    "Accuracy", "Success"
                 ])
             
-            # 写入数据行
             success_str = "true" if metrics.success else "false"
             writer.writerow([
                 metrics.timestamp,
@@ -91,6 +103,9 @@ def save_to_csv(metrics, filename):
                 f"{metrics.avg_latency:.2f}",
                 f"{metrics.p95_latency:.2f}",
                 f"{metrics.p99_latency:.2f}",
+                str(metrics.error_count),
+                str(metrics.retransmit_count),
+                f"{metrics.accuracy:.2f}",
                 success_str
             ])
         
@@ -111,10 +126,8 @@ def append_statistics(filename, total_tests, success_tests, failed_tests):
         with open(file_path, 'a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             
-            # 写入空行作为分隔符
             writer.writerow([])
             
-            # 写入统计信息（使用英文避免编码问题）
             success_rate = (success_tests / total_tests * 100.0) if total_tests > 0 else 0.0
             
             writer.writerow(["=== Test Statistics ==="])

@@ -9,6 +9,8 @@
 #include <chrono>
 #include <string>
 #include <cstring>
+#include <cstdlib>
+#include <random>
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -110,10 +112,56 @@ public:
         listen(serverSocket, 100);
         return true;
     }
+
+    // Helper: send exact N bytes (handles partial sends)
+    bool sendAll(
+#ifdef _WIN32
+        SOCKET conn, const char* data, int len
+#else
+        int conn, const void* data, int len
+#endif
+    ) {
+        int totalSent = 0;
+        while (totalSent < len) {
+#ifdef _WIN32
+            int sent = send(conn, data + totalSent, len - totalSent, 0);
+            if (sent == SOCKET_ERROR) return false;
+#else
+            ssize_t sent = send(conn, static_cast<const char*>(data) + totalSent, len - totalSent, 0);
+            if (sent < 0) return false;
+#endif
+            totalSent += sent;
+        }
+        return true;
+    }
+
+    // Helper: receive exact N bytes
+    bool recvAll(
+#ifdef _WIN32
+        SOCKET conn, char* buffer, int len
+#else
+        int conn, void* buffer, int len
+#endif
+    ) {
+        int totalRead = 0;
+        while (totalRead < len) {
+#ifdef _WIN32
+            int read = recv(conn, buffer + totalRead, len - totalRead, 0);
+            if (read <= 0) return false;
+#else
+            ssize_t read = recv(conn, static_cast<char*>(buffer) + totalRead, len - totalRead, 0);
+            if (read <= 0) return false;
+#endif
+            totalRead += read;
+        }
+        return true;
+    }
     
-    // Producer function with long connection (same as SocketIPC)
+    // Producer function with long connection, ACK/NACK retransmission
     void producer(int id, int messageCount, int messageSize,
-                  std::vector<double>* latencies, std::mutex* latenciesMutex) {
+                  std::vector<double>* latencies, std::mutex* latenciesMutex,
+                  std::atomic<int>* errorCounter, std::atomic<int>* retransmitCounter) {
+        // Create test data (messageSize bytes of payload)
         std::vector<char> data(messageSize);
         for (int i = 0; i < messageSize; i++) {
             data[i] = static_cast<char>(i % 256);
@@ -125,6 +173,7 @@ public:
         int conn = -1;
 #endif
         
+        // Establish long connection with retry
         int maxRetries = 10;
         for (int retry = 0; retry < maxRetries; retry++) {
 #ifdef _WIN32
@@ -165,7 +214,7 @@ public:
                 continue;
             }
 #endif
-            break;
+            break; // Connection successful
         }
         
         if (
@@ -179,39 +228,71 @@ public:
             return;
         }
         
+        // Send all messages using the same connection
+        // Thread-safe random number generator (thread-local)
+        thread_local std::mt19937 rng(std::random_device{}());
+        std::uniform_real_distribution<double> errorDist(0.0, 1.0);
+        std::uniform_int_distribution<int> posDist(0, messageSize - 1);
+        
         for (int i = 0; i < messageCount; i++) {
             auto startTime = std::chrono::high_resolution_clock::now();
             
-            uint32_t msgSize = static_cast<uint32_t>(messageSize);
-            uint32_t netSize = htonl(msgSize);
+            // Compute checksum on original data
+            uint32_t checksum = computeChecksum(data.data(), messageSize);
+            uint32_t netChecksum = htonl(checksum);
             
+            // Wire format: [4B header = messageSize+4] [data] [4B checksum]
+            uint32_t totalPayload = static_cast<uint32_t>(messageSize + 4);
+            uint32_t netHeader = htonl(totalPayload);
+            
+            // Error injection: with ERROR_RATE probability, corrupt 1 byte in data
+            std::vector<char> sendData = data;  // copy for potential corruption
+            if (errorDist(rng) < ERROR_RATE) {
+                int corruptPos = posDist(rng);
+                sendData[corruptPos] = static_cast<char>(sendData[corruptPos] ^ 0xFF);
+            }
+            
+            // Retransmission loop
+            bool delivered = false;
+            int retransmits = 0;
+            for (int attempt = 0; attempt <= MAX_RETRANSMIT && !delivered; attempt++) {
+                if (attempt > 0) {
+                    // Retransmit: send ORIGINAL (correct) data
+                    sendData = data;
+                    retransmits++;
+                }
+                
+                // Send header
+                if (!sendAll(conn, reinterpret_cast<const char*>(&netHeader), 4)) {
+                    break;
+                }
+                // Send data
+                if (!sendAll(conn, sendData.data(), messageSize)) {
+                    break;
+                }
+                // Send checksum
+                if (!sendAll(conn, reinterpret_cast<const char*>(&netChecksum), 4)) {
+                    break;
+                }
+                
+                // Receive ACK/NACK (1 byte)
+                uint8_t ack;
 #ifdef _WIN32
-            if (send(conn, reinterpret_cast<const char*>(&netSize), 4, 0) == SOCKET_ERROR) {
-                break;
-            }
-            
-            int totalSent = 0;
-            while (totalSent < messageSize) {
-                int sent = send(conn, &data[totalSent], messageSize - totalSent, 0);
-                if (sent == SOCKET_ERROR) {
-                    break;
-                }
-                totalSent += sent;
-            }
+                int ackRead = recv(conn, reinterpret_cast<char*>(&ack), 1, 0);
+                if (ackRead <= 0) break;
 #else
-            if (send(conn, &netSize, 4, 0) < 0) {
-                break;
+                ssize_t ackRead = recv(conn, &ack, 1, 0);
+                if (ackRead <= 0) break;
+#endif
+                
+                if (ack == 0x01) {
+                    delivered = true;
+                }
             }
             
-            int totalSent = 0;
-            while (totalSent < messageSize) {
-                int sent = send(conn, &data[totalSent], messageSize - totalSent, 0);
-                if (sent < 0) {
-                    break;
-                }
-                totalSent += sent;
+            if (retransmits > 0) {
+                retransmitCounter->fetch_add(retransmits);
             }
-#endif
             
             auto endTime = std::chrono::high_resolution_clock::now();
             double elapsed = std::chrono::duration<double, std::micro>(endTime - startTime).count();
@@ -222,6 +303,7 @@ public:
             }
         }
         
+        // Close connection
 #ifdef _WIN32
         closesocket(conn);
 #else
@@ -229,51 +311,58 @@ public:
 #endif
     }
     
-    // Handle connection (same as SocketIPC)
+    // Handle connection: receive messages, validate checksum, send ACK/NACK
     void handleConnection(
 #ifdef _WIN32
         SOCKET conn
 #else
         int conn
 #endif
-        , int messageSize, std::atomic<int64_t>* receivedCount, int expectedMessages) {
+        , int messageSize, std::atomic<int64_t>* receivedCount,
+          std::atomic<int>* errorCounter, int expectedMessages) {
         
-        for (int i = 0; i < expectedMessages; i++) {
-            uint32_t netSize;
-#ifdef _WIN32
-            int bytesRead = recv(conn, reinterpret_cast<char*>(&netSize), 4, 0);
-            if (bytesRead <= 0) {
+        int successCount = 0;
+        while (successCount < expectedMessages) {
+            // Read 4-byte header: total payload size = messageSize + 4
+            uint32_t netHeader;
+            if (!recvAll(conn, reinterpret_cast<char*>(&netHeader), 4)) {
                 break;
             }
-#else
-            ssize_t bytesRead = recv(conn, &netSize, 4, 0);
-            if (bytesRead <= 0) {
+            uint32_t totalPayload = ntohl(netHeader);
+            int dataLen = static_cast<int>(totalPayload) - 4;
+            
+            // Read data + checksum as one buffer
+            std::vector<char> buffer(totalPayload);
+            if (!recvAll(conn, buffer.data(), totalPayload)) {
                 break;
             }
-#endif
             
-            uint32_t msgSize = ntohl(netSize);
+            // Extract checksum (last 4 bytes) and validate
+            uint32_t receivedChecksum;
+            std::memcpy(&receivedChecksum, buffer.data() + dataLen, 4);
+            receivedChecksum = ntohl(receivedChecksum);
             
-            std::vector<char> buffer(msgSize);
-            int totalRead = 0;
-            while (totalRead < msgSize) {
-#ifdef _WIN32
-                int read = recv(conn, &buffer[totalRead], msgSize - totalRead, 0);
-                if (read <= 0) {
-                    break;
-                }
-#else
-                ssize_t read = recv(conn, &buffer[totalRead], msgSize - totalRead, 0);
-                if (read <= 0) {
-                    break;
-                }
-#endif
-                totalRead += read;
+            uint32_t computedChecksum = computeChecksum(buffer.data(), dataLen);
+            
+            uint8_t ack;
+            if (computedChecksum == receivedChecksum) {
+                ack = 0x01; // ACK
+                receivedCount->fetch_add(1);
+                successCount++;
+            } else {
+                ack = 0x00; // NACK
+                errorCounter->fetch_add(1);
             }
             
-            receivedCount->fetch_add(1);
+            // Send ACK/NACK
+#ifdef _WIN32
+            send(conn, reinterpret_cast<const char*>(&ack), 1, 0);
+#else
+            send(conn, &ack, 1, 0);
+#endif
         }
         
+        // Close connection
 #ifdef _WIN32
         closesocket(conn);
 #else
@@ -281,7 +370,7 @@ public:
 #endif
     }
     
-    // Run test (same logic as SocketIPC)
+    // Run test
     PerformanceMetrics runTest(int producers, int consumers, int messagesPerProducer, int messageSize) {
         PerformanceMetrics metrics;
         metrics.ipcType = "tcp";
@@ -291,6 +380,8 @@ public:
         metrics.messageCount = producers * messagesPerProducer;
         metrics.messageSize = messageSize;
         metrics.timestamp = MetricsUtils::getCurrentTimestamp();
+        metrics.errorCount = 0;
+        metrics.retransmitCount = 0;
         metrics.success = false;
         
         if (!startServer()) {
@@ -305,11 +396,14 @@ public:
         std::vector<double> latencies;
         std::mutex latenciesMutex;
         std::atomic<int64_t> receivedCount{0};
+        std::atomic<int> errorCounter{0};
+        std::atomic<int> retransmitCounter{0};
         
         auto startTime = std::chrono::high_resolution_clock::now();
         
         std::atomic<bool> acceptDone{false};
-        std::thread acceptThread([this, producers, messagesPerProducer, messageSize, &receivedCount, &acceptDone, &consumerThreads]() {
+        std::thread acceptThread([this, producers, messagesPerProducer, messageSize,
+                                   &receivedCount, &errorCounter, &acceptDone, &consumerThreads]() {
             for (int i = 0; i < producers; i++) {
 #ifdef _WIN32
                 SOCKET conn = accept(serverSocket, nullptr, nullptr);
@@ -323,7 +417,8 @@ public:
                 }
 #endif
                 consumerThreads.emplace_back(&TcpIPC::handleConnection, this, conn, 
-                                            messageSize, &receivedCount, messagesPerProducer);
+                                            messageSize, &receivedCount, &errorCounter,
+                                            messagesPerProducer);
             }
             acceptDone.store(true);
         });
@@ -333,7 +428,8 @@ public:
         for (int i = 0; i < producers; i++) {
             producerThreads.emplace_back(&TcpIPC::producer, this, i,
                                         messagesPerProducer, messageSize,
-                                        &latencies, &latenciesMutex);
+                                        &latencies, &latenciesMutex,
+                                        &errorCounter, &retransmitCounter);
         }
         
         for (auto& t : producerThreads) {
@@ -361,6 +457,10 @@ public:
         
         metrics.totalTime = totalTime;
         metrics.throughput = (totalTime > 0) ? (metrics.messageCount / totalTime) : 0;
+        metrics.errorCount = errorCounter.load();
+        metrics.retransmitCount = retransmitCounter.load();
+        metrics.accuracy = (metrics.messageCount > 0) ?
+            ((metrics.messageCount - metrics.errorCount) * 100.0 / metrics.messageCount) : 100.0;
         
         if (!latencies.empty()) {
             double sum = 0;

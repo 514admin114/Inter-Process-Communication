@@ -80,7 +80,7 @@ config.messagesPerProd = 1000;                 // 1000条消息
 结果保存到 `../csv/ipc_performance_cpp.csv`:
 
 ```csv
-Timestamp,IPC_Type,Pattern,Producer_Count,Consumer_Count,Message_Count,Message_Size,Total_Time_Seconds,Throughput_Msg_Per_Sec,Avg_Latency_Microseconds,P95_Latency_Microseconds,P99_Latency_Microseconds,Success
+Timestamp,IPC_Type,Pattern,Producer_Count,Consumer_Count,Message_Count,Message_Size,Total_Time_Seconds,Throughput_Msg_Per_Sec,Avg_Latency_Microseconds,P95_Latency_Microseconds,P99_Latency_Microseconds,Error_Count,Retransmit_Count,Success
 ```
 
 ### 统计信息
@@ -110,15 +110,16 @@ streamlit run ipc_analyzer.py
 
 ## 💡 实现细节
 
+### 数据校验与重传
+Socket/TCP 通信实现了完整的数据完整性保障机制：
+- **累加和校验**: `computeChecksum()` 对所有数据字节求和模 2^32，附加到消息末尾
+- **错误注入**: 每条消息 1% 概率随机翻转一个数据字节（`ERROR_RATE = 0.01`）
+- **ACK/NACK**: 消费者校验后回复单字节应答，生产者根据应答决定重传
+- **最大重传**: 3 次 (`MAX_RETRANSMIT = 3`)，重传时发送正确的原始数据
+- **线格式**: `[4B 头 = messageSize+4, 大端序] [数据] [4B 校验和, 大端序]`
+
 ### 共享内存
-使用带互斥锁和条件变量的线程安全队列进行同步。
-
-### Socket IPC
-- **Windows**: TCP localhost(模拟Named Pipe)
-- 长连接复用(每个生产者一个连接)
-
-### TCP Socket
-标准的TCP回环通信,支持长连接复用。
+使用带互斥锁和条件变量的线程安全队列进行同步。校验和验证在消费端进行，不计重传。
 
 ---
 

@@ -176,6 +176,16 @@ streamlit run ipc_analyzer.py
 - **总测试数**: 约192个测试
 - **预计时间**: 20-40分钟
 
+## 🔐 数据校验与重传协议
+
+所有 Socket/TCP 通信实现了数据完整性校验机制：
+
+- **校验算法**: 累加和校验（所有字节之和模 2^32），以 4 字节大端序编码
+- **错误注入**: 每条消息以 1% 的概率随机翻转一个数据字节，模拟传输错误
+- **ACK/NACK 重传**: 消费者校验后回复 ACK (0x01) 或 NACK (0x00)，生产者最多重传 3 次
+- **线格式**: `[4B 头 = messageSize+4] [数据] [4B 校验和]`
+- **共享内存**: 仅进行校验和验证和错误计数，无需重传（进程内通信）
+
 ## 📈 性能指标
 
 每个测试收集以下指标：
@@ -185,6 +195,8 @@ streamlit run ipc_analyzer.py
 - **P95延迟**: 95%消息的延迟上限 (μs)
 - **P99延迟**: 99%消息的延迟上限 (μs)
 - **总耗时 (Total Time)**: 测试执行总时间 (秒)
+- **错误数 (Error Count)**: 校验和验证失败的消息数
+- **重传数 (Retransmit Count)**: Socket/TCP 通信中执行的累计重传次数
 
 ## 📁 输出结果
 
@@ -198,7 +210,7 @@ streamlit run ipc_analyzer.py
 ### CSV格式
 
 ```csv
-Timestamp,IPC_Type,Pattern,Producer_Count,Consumer_Count,Message_Count,Message_Size,Total_Time_Seconds,Throughput_Msg_Per_Sec,Avg_Latency_Microseconds,P95_Latency_Microseconds,P99_Latency_Microseconds,Success
+Timestamp,IPC_Type,Pattern,Producer_Count,Consumer_Count,Message_Count,Message_Size,Total_Time_Seconds,Throughput_Msg_Per_Sec,Avg_Latency_Microseconds,P95_Latency_Microseconds,P99_Latency_Microseconds,Error_Count,Retransmit_Count,Success
 ```
 
 ## 📊 性能数据可视化分析

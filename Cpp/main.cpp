@@ -28,6 +28,11 @@ void printMetrics(const PerformanceMetrics& metrics) {
     std::cout << "Average Latency: " << std::fixed << std::setprecision(2) << metrics.avgLatency << " microseconds" << std::endl;
     std::cout << "P95 Latency: " << std::fixed << std::setprecision(2) << metrics.p95Latency << " microseconds" << std::endl;
     std::cout << "P99 Latency: " << std::fixed << std::setprecision(2) << metrics.p99Latency << " microseconds" << std::endl;
+    std::cout << "Error Count: " << metrics.errorCount
+              << ", Retransmit Count: " << metrics.retransmitCount << std::endl;
+    std::cout << "Error Rate: " << std::fixed << std::setprecision(2)
+              << (metrics.messageCount > 0 ? (metrics.errorCount * 100.0 / metrics.messageCount) : 0.0)
+              << "%" << std::endl;
     std::cout << "Success: " << (metrics.success ? "true" : "false") << std::endl;
 }
 

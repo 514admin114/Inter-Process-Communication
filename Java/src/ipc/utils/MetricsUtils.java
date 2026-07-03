@@ -8,6 +8,24 @@ import java.util.*;
 
 public class MetricsUtils {
     
+    // Error injection constants
+    public static final double ERROR_RATE = 0.01;
+    public static final int MAX_RETRANSMIT = 3;
+    
+    /** Compute additive checksum (sum of all bytes modulo 2^32) */
+    public static int computeChecksum(byte[] data, int offset, int len) {
+        int sum = 0;
+        for (int i = 0; i < len; i++) {
+            sum += (data[offset + i] & 0xFF);
+        }
+        return sum;
+    }
+    
+    /** Compute checksum on entire array */
+    public static int computeChecksum(byte[] data) {
+        return computeChecksum(data, 0, data.length);
+    }
+    
     // 确保数据目录存在
     public static boolean ensureDataDir() {
         try {
@@ -34,15 +52,16 @@ public class MetricsUtils {
             return 0.0;
         }
         
-        // 排序
-        Collections.sort(latencies);
+        // 创建副本并排序，避免修改原列表
+        List<Double> sorted = new ArrayList<>(latencies);
+        Collections.sort(sorted);
         
-        int index = (int) (latencies.size() * percentile / 100.0);
-        if (index >= latencies.size()) {
-            index = latencies.size() - 1;
+        int index = (int) (sorted.size() * percentile / 100.0);
+        if (index >= sorted.size()) {
+            index = sorted.size() - 1;
         }
         
-        return latencies.get(index);
+        return sorted.get(index);
     }
     
     // 保存指标到CSV文件
@@ -63,12 +82,13 @@ public class MetricsUtils {
             if (!fileExists) {
                 writer.println("Timestamp,IPC_Type,Pattern,Producer_Count,Consumer_Count," +
                              "Message_Count,Message_Size,Total_Time_Seconds,Throughput_Msg_Per_Sec," +
-                             "Avg_Latency_Microseconds,P95_Latency_Microseconds,P99_Latency_Microseconds,Success");
+                             "Avg_Latency_Microseconds,P95_Latency_Microseconds,P99_Latency_Microseconds," +
+                             "Error_Count,Retransmit_Count,Accuracy,Success");
             }
             
             // 写入数据行
             String successStr = metrics.success ? "true" : "false";
-            writer.printf("%s,%s,%s,%d,%d,%d,%d,%.6f,%.2f,%.2f,%.2f,%.2f,%s%n",
+            writer.printf("%s,%s,%s,%d,%d,%d,%d,%.6f,%.2f,%.2f,%.2f,%.2f,%d,%d,%.2f,%s%n",
                 metrics.timestamp,
                 metrics.ipcType,
                 metrics.pattern,
@@ -81,6 +101,9 @@ public class MetricsUtils {
                 metrics.avgLatency,
                 metrics.p95Latency,
                 metrics.p99Latency,
+                metrics.errorCount,
+                metrics.retransmitCount,
+                metrics.accuracy,
                 successStr
             );
             

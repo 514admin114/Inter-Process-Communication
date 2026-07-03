@@ -10,12 +10,15 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <cstring>
+#include <cstdlib>
+#include <random>
 #include "../utils/metrics.h"
 
 class SharedMemoryIPC {
 private:
     struct Message {
-        std::vector<char> data;
+        std::vector<char> data;  // includes data + 4-byte checksum appended
         std::chrono::high_resolution_clock::time_point sendTime;
     };
     
@@ -23,27 +26,45 @@ private:
     std::mutex queueMutex;
     std::condition_variable cv;
     std::atomic<int> receivedCount{0};
+    std::atomic<int> errorCount{0};
     int expectedMessages;
     
 public:
     // Producer function
     void producer(int id, int messageCount, int messageSize, 
                   std::vector<double>* latencies, std::mutex* latenciesMutex) {
-        // Create test data
+        // Create test data (messageSize bytes of payload)
         std::vector<char> data(messageSize);
         for (int i = 0; i < messageSize; i++) {
             data[i] = static_cast<char>(i % 256);
         }
         
+        // Thread-safe random number generator (thread-local)
+        thread_local std::mt19937 rng(std::random_device{}());
+        std::uniform_real_distribution<double> errorDist(0.0, 1.0);
+        std::uniform_int_distribution<int> posDist(0, messageSize - 1);
+        
         for (int i = 0; i < messageCount; i++) {
             auto startTime = std::chrono::high_resolution_clock::now();
             
-            // Create message
+            // Compute checksum on original data
+            uint32_t checksum = computeChecksum(data.data(), messageSize);
+            
+            // Build message: data + 4-byte checksum
+            std::vector<char> msgData(messageSize + 4);
+            std::memcpy(msgData.data(), data.data(), messageSize);
+            std::memcpy(msgData.data() + messageSize, &checksum, 4);
+            
+            // Error injection: with ERROR_RATE probability, corrupt 1 byte
+            if (errorDist(rng) < ERROR_RATE) {
+                int corruptPos = posDist(rng);  // corrupt in data portion only
+                msgData[corruptPos] = static_cast<char>(msgData[corruptPos] ^ 0xFF);
+            }
+            
             Message msg;
-            msg.data = data;
+            msg.data = std::move(msgData);
             msg.sendTime = startTime;
             
-            // Add to queue
             {
                 std::lock_guard<std::mutex> lock(queueMutex);
                 messageQueue.push(msg);
@@ -53,7 +74,6 @@ public:
             auto endTime = std::chrono::high_resolution_clock::now();
             double elapsed = std::chrono::duration<double, std::micro>(endTime - startTime).count();
             
-            // Record latency
             {
                 std::lock_guard<std::mutex> lock(*latenciesMutex);
                 latencies->push_back(elapsed);
@@ -62,7 +82,7 @@ public:
     }
     
     // Consumer function
-    void consumer(int id, std::atomic<bool>* stopFlag) {
+    void consumer(int id, int messageSize, std::atomic<bool>* stopFlag) {
         while (true) {
             Message msg;
             {
@@ -74,7 +94,6 @@ public:
                 if (stopFlag->load() && messageQueue.empty()) {
                     break;
                 }
-                
                 if (messageQueue.empty()) {
                     continue;
                 }
@@ -83,10 +102,21 @@ public:
                 messageQueue.pop();
             }
             
-            // Process message (simulate work)
+            // Validate checksum: last 4 bytes are checksum, rest is data
+            size_t totalLen = msg.data.size();
+            size_t dataLen = totalLen - 4;
+            uint32_t expectedChecksum, receivedChecksum;
+            std::memcpy(&receivedChecksum, msg.data.data() + dataLen, 4);
+            expectedChecksum = computeChecksum(msg.data.data(), dataLen);
+            
+            if (expectedChecksum != receivedChecksum) {
+                errorCount.fetch_add(1);
+            }
+            
+            // Simulate work
             volatile char sum = 0;
-            for (char c : msg.data) {
-                sum += c;
+            for (size_t c = 0; c < dataLen; c++) {
+                sum += msg.data[c];
             }
             
             receivedCount.fetch_add(1);
@@ -103,9 +133,13 @@ public:
         metrics.messageCount = producers * messagesPerProducer;
         metrics.messageSize = messageSize;
         metrics.timestamp = MetricsUtils::getCurrentTimestamp();
+        metrics.errorCount = 0;
+        metrics.retransmitCount = 0;
         metrics.success = false;
         
         expectedMessages = metrics.messageCount;
+        errorCount.store(0);
+        receivedCount.store(0);
         
         std::vector<std::thread> producerThreads;
         std::vector<std::thread> consumerThreads;
@@ -117,7 +151,7 @@ public:
         
         // Start consumers
         for (int i = 0; i < consumers; i++) {
-            consumerThreads.emplace_back(&SharedMemoryIPC::consumer, this, i, &stopFlag);
+            consumerThreads.emplace_back(&SharedMemoryIPC::consumer, this, i, messageSize, &stopFlag);
         }
         
         // Start producers
@@ -127,19 +161,15 @@ public:
                                         &latencies, &latenciesMutex);
         }
         
-        // Wait for all producers to finish
         for (auto& t : producerThreads) {
             t.join();
         }
         
-        // Wait a bit for consumers to process remaining messages
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         
-        // Signal consumers to stop
         stopFlag.store(true);
         cv.notify_all();
         
-        // Wait for all consumers to finish
         for (auto& t : consumerThreads) {
             t.join();
         }
@@ -147,9 +177,12 @@ public:
         auto endTime = std::chrono::high_resolution_clock::now();
         double totalTime = std::chrono::duration<double>(endTime - startTime).count();
         
-        // Calculate metrics
         metrics.totalTime = totalTime;
         metrics.throughput = (totalTime > 0) ? (metrics.messageCount / totalTime) : 0;
+        metrics.errorCount = errorCount.load();
+        metrics.retransmitCount = 0;  // shared_memory has no retransmission
+        metrics.accuracy = (metrics.messageCount > 0) ?
+            ((metrics.messageCount - metrics.errorCount) * 100.0 / metrics.messageCount) : 100.0;
         
         if (!latencies.empty()) {
             double sum = 0;

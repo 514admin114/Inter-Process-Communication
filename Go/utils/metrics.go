@@ -8,6 +8,12 @@ import (
 	"time"
 )
 
+// Error injection constants
+const (
+	ErrorRate      = 0.01
+	MaxRetransmit  = 3
+)
+
 // PerformanceMetrics 性能指标结构
 type PerformanceMetrics struct {
 	IPCType        string  // IPC类型: shared_memory, socket, tcp
@@ -21,8 +27,20 @@ type PerformanceMetrics struct {
 	AvgLatency     float64 // 平均延迟(微秒)
 	P95Latency     float64 // P95延迟(微秒)
 	P99Latency     float64 // P99延迟(微秒)
+	ErrorCount     int     // 检测到的错误消息数
+	RetransmitCount int    // 重传次数
+	Accuracy       float64 // 数据传输准确率(%): 无错误传输的消息百分比
 	Timestamp      string  // 时间戳
 	Success        bool    // 测试是否成功
+}
+
+// ComputeChecksum computes additive checksum (sum of all bytes modulo 2^32)
+func ComputeChecksum(data []byte) uint32 {
+	var sum uint32
+	for _, b := range data {
+		sum += uint32(b)
+	}
+	return sum
 }
 
 // EnsureDataDir 确保数据目录存在
@@ -65,7 +83,9 @@ func SaveToCSV(metrics *PerformanceMetrics, filename string) error {
 			"Message_Count", "Message_Size",
 			"Total_Time_Seconds", "Throughput_Msg_Per_Sec",
 			"Avg_Latency_Microseconds", "P95_Latency_Microseconds",
-			"P99_Latency_Microseconds", "Success",
+			"P99_Latency_Microseconds", "Error_Count", "Retransmit_Count",
+				"Accuracy",
+			"Success",
 		}
 		if err := writer.Write(headers); err != nil {
 			return fmt.Errorf("写入表头失败: %v", err)
@@ -91,6 +111,9 @@ func SaveToCSV(metrics *PerformanceMetrics, filename string) error {
 		fmt.Sprintf("%.2f", metrics.AvgLatency),
 		fmt.Sprintf("%.2f", metrics.P95Latency),
 		fmt.Sprintf("%.2f", metrics.P99Latency),
+		fmt.Sprintf("%d", metrics.ErrorCount),
+		fmt.Sprintf("%d", metrics.RetransmitCount),
+			fmt.Sprintf("%.2f", metrics.Accuracy),
 		successStr,
 	}
 
@@ -125,11 +148,11 @@ func AppendStatistics(filename string, totalTests, successTests, failedTests int
 
 	// Write statistics in English to avoid encoding issues
 	stats := [][]string{
-		{"=== Test Statistics ===", "", "", "", "", "", "", "", "", "", "", "", ""},
-		{"Total Tests", fmt.Sprintf("%d", totalTests), "", "", "", "", "", "", "", "", "", "", ""},
-		{"Successful Tests", fmt.Sprintf("%d", successTests), "", "", "", "", "", "", "", "", "", "", ""},
-		{"Failed Tests", fmt.Sprintf("%d", failedTests), "", "", "", "", "", "", "", "", "", "", ""},
-		{"Success Rate", fmt.Sprintf("%.2f%%", float64(successTests)/float64(totalTests)*100), "", "", "", "", "", "", "", "", "", "", ""},
+		{"=== Test Statistics ===", "", "", "", "", "", "", "", "", "", "", "", "", "", ""},
+		{"Total Tests", fmt.Sprintf("%d", totalTests), "", "", "", "", "", "", "", "", "", "", "", ""},
+		{"Successful Tests", fmt.Sprintf("%d", successTests), "", "", "", "", "", "", "", "", "", "", "", ""},
+		{"Failed Tests", fmt.Sprintf("%d", failedTests), "", "", "", "", "", "", "", "", "", "", "", ""},
+		{"Success Rate", fmt.Sprintf("%.2f%%", float64(successTests)/float64(totalTests)*100), "", "", "", "", "", "", "", "", "", "", "", ""},
 	}
 
 	for _, row := range stats {

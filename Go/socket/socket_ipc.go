@@ -3,6 +3,8 @@ package socket
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
+	"math/rand"
 	"net"
 	"os"
 	"runtime"
@@ -23,7 +25,7 @@ type SocketIPC struct {
 // NewSocketIPC 创建Socket IPC实例
 func NewSocketIPC(messageSize int) *SocketIPC {
 	var network, address string
-	
+
 	if runtime.GOOS == "windows" {
 		// Windows使用TCP localhost
 		network = "tcp"
@@ -57,9 +59,30 @@ func (s *SocketIPC) StartServer() (net.Listener, error) {
 	return listener, nil
 }
 
-// Producer 生产者函数（使用长连接）
-func Producer(id int, address string, network string, messageCount int, messageSize int, 
-	wg *sync.WaitGroup, latencies *[]float64, mu *sync.Mutex) {
+// sendAll sends exactly len(data) bytes
+func sendAll(conn net.Conn, data []byte) error {
+	total := 0
+	for total < len(data) {
+		n, err := conn.Write(data[total:])
+		if err != nil {
+			return err
+		}
+		total += n
+	}
+	return nil
+}
+
+// recvAll receives exactly n bytes
+func recvAll(conn net.Conn, n int) ([]byte, error) {
+	buf := make([]byte, n)
+	_, err := io.ReadFull(conn, buf)
+	return buf, err
+}
+
+// Producer 生产者函数（使用长连接 + ACK/NACK重传）
+func Producer(id int, address string, network string, messageCount int, messageSize int,
+	wg *sync.WaitGroup, latencies *[]float64, mu *sync.Mutex,
+	errorCount *int64, retransmitCount *int64) {
 	defer wg.Done()
 
 	data := make([]byte, messageSize)
@@ -67,11 +90,10 @@ func Producer(id int, address string, network string, messageCount int, messageS
 		data[i] = byte(i % 256)
 	}
 
-	// ✅ 建立长连接，复用整个测试过程
+	// 建立长连接，复用整个测试过程
 	var conn net.Conn
 	var err error
-	
-	// 带重试的连接
+
 	maxRetries := 10
 	for retry := 0; retry < maxRetries; retry++ {
 		conn, err = net.Dial(network, address)
@@ -80,80 +102,130 @@ func Producer(id int, address string, network string, messageCount int, messageS
 		}
 		time.Sleep(time.Duration(retry+1) * 10 * time.Millisecond)
 	}
-	
+
 	if err != nil {
 		fmt.Printf("Producer %d 无法建立连接: %v\n", id, err)
 		return
 	}
 	defer conn.Close()
 
-	// ✅ 复用同一个连接发送所有消息
+	// Per-goroutine random number generator (thread-safe)
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	// 复用同一个连接发送所有消息
 	for i := 0; i < messageCount; i++ {
 		start := time.Now()
-		
-		// 发送消息长度
-		lenBuf := make([]byte, 4)
-		binary.BigEndian.PutUint32(lenBuf, uint32(messageSize))
-		if _, err := conn.Write(lenBuf); err != nil {
-			fmt.Printf("Producer %d 消息 %d/%d 写入长度失败: %v\n", id, i+1, messageCount, err)
-			break
+
+		// Compute checksum on original data
+		checksum := utils.ComputeChecksum(data)
+		checksumBuf := make([]byte, 4)
+		binary.BigEndian.PutUint32(checksumBuf, checksum)
+
+		// Wire format: [4B header = messageSize+4] [data] [4B checksum]
+		totalPayload := uint32(messageSize + 4)
+		headerBuf := make([]byte, 4)
+		binary.BigEndian.PutUint32(headerBuf, totalPayload)
+
+		// Error injection: corrupt 1 byte in data with ErrorRate probability
+		sendData := make([]byte, messageSize)
+		copy(sendData, data)
+		if rng.Float64() < utils.ErrorRate {
+			corruptPos := rng.Intn(messageSize)
+			sendData[corruptPos] ^= 0xFF
 		}
 
-		// 发送数据
-		totalWritten := 0
-		for totalWritten < messageSize {
-			n, err := conn.Write(data[totalWritten:])
-			if err != nil {
-				fmt.Printf("Producer %d 消息 %d/%d 写入数据失败: %v\n", id, i+1, messageCount, err)
+		// Retransmission loop
+		delivered := false
+		retransmits := 0
+		for attempt := 0; attempt <= utils.MaxRetransmit && !delivered; attempt++ {
+			if attempt > 0 {
+				// Retransmit: send original (correct) data
+				copy(sendData, data)
+				retransmits++
+			}
+
+			// Send header
+			if err := sendAll(conn, headerBuf); err != nil {
 				break
 			}
-			totalWritten += n
+			// Send data
+			if err := sendAll(conn, sendData); err != nil {
+				break
+			}
+			// Send checksum
+			if err := sendAll(conn, checksumBuf); err != nil {
+				break
+			}
+
+			// Receive ACK/NACK (1 byte)
+			ackBuf, err := recvAll(conn, 1)
+			if err != nil {
+				break
+			}
+
+			if ackBuf[0] == 0x01 {
+				delivered = true
+			}
+			// If NACK (0x00), loop will retry
+		}
+
+		if retransmits > 0 {
+			atomic.AddInt64(retransmitCount, int64(retransmits))
 		}
 
 		elapsed := time.Since(start).Seconds() * 1000000 // 转换为微秒
-		
+
 		mu.Lock()
 		*latencies = append(*latencies, elapsed)
 		mu.Unlock()
 	}
 }
 
-// handleConnection 处理单个连接（支持多条消息）
-func handleConnection(conn net.Conn, messageSize int, receivedCount *int64, serverWg *sync.WaitGroup, expectedMessages int) {
+// handleConnection 处理单个连接：接收消息，校验checksum，发送ACK/NACK
+func handleConnection(conn net.Conn, messageSize int, receivedCount *int64,
+	errorCount *int64, serverWg *sync.WaitGroup, expectedMessages int) {
 	defer conn.Close()
 	defer serverWg.Done()
 
-	// ✅ 循环接收多条消息，直到达到预期数量或连接关闭
-	for i := 0; i < expectedMessages; i++ {
-		// 读取消息长度
-		lenBuf := make([]byte, 4)
-		if _, err := conn.Read(lenBuf); err != nil {
-			// 连接关闭或错误，退出循环
+	successCount := 0
+	for successCount < expectedMessages {
+		// Read 4-byte header: total payload size = messageSize + 4
+		headerBuf, err := recvAll(conn, 4)
+		if err != nil {
 			return
 		}
-		
-		msgSize := int(binary.BigEndian.Uint32(lenBuf))
-		
-		// 读取数据
-		data := make([]byte, msgSize)
-		totalRead := 0
-		for totalRead < msgSize {
-			n, err := conn.Read(data[totalRead:])
-			if err != nil {
-				return
-			}
-			totalRead += n
+		totalPayload := binary.BigEndian.Uint32(headerBuf)
+		dataLen := int(totalPayload) - 4
+
+		// Read data + checksum as one buffer
+		payload, err := recvAll(conn, int(totalPayload))
+		if err != nil {
+			return
 		}
 
-		// 原子增加接收计数
-		atomic.AddInt64(receivedCount, 1)
+		// Extract checksum (last 4 bytes) and validate
+		receivedChecksum := binary.BigEndian.Uint32(payload[dataLen:])
+		computedChecksum := utils.ComputeChecksum(payload[:dataLen])
+
+		var ack byte
+		if computedChecksum == receivedChecksum {
+			ack = 0x01 // ACK
+			atomic.AddInt64(receivedCount, 1)
+			successCount++
+		} else {
+			ack = 0x00 // NACK
+			atomic.AddInt64(errorCount, 1)
+		}
+
+		// Send ACK/NACK
+		conn.Write([]byte{ack})
 	}
 }
 
 // RunTest 运行Socket IPC测试
 func RunTest(producers, consumers, messagesPerProducer, messageSize int) (*utils.PerformanceMetrics, error) {
 	fmt.Printf("\n=== Socket IPC测试 ===\n")
-	fmt.Printf("生产者: %d, 消费者: %d, 每个生产者消息数: %d, 消息大小: %d字节\n", 
+	fmt.Printf("生产者: %d, 消费者: %d, 每个生产者消息数: %d, 消息大小: %d字节\n",
 		producers, consumers, messagesPerProducer, messageSize)
 
 	socketIPC := NewSocketIPC(messageSize)
@@ -174,18 +246,20 @@ func RunTest(producers, consumers, messagesPerProducer, messageSize int) (*utils
 	var latencies []float64
 	var mu sync.Mutex
 	var receivedCount int64
+	var errorCount int64
+	var retransmitCount int64
 
 	startTime := time.Now()
 
 	// 启动服务器接受连接（在单独的goroutine中）
 	acceptDone := make(chan struct{})
-	serverReady := make(chan struct{})  // 信号：服务器已准备好
-	
+	serverReady := make(chan struct{}) // 信号：服务器已准备好
+
 	go func() {
 		defer close(acceptDone)
-		close(serverReady)  // 立即发出就绪信号
-		
-		// ✅ 接受producers个连接（每个Producer一个连接）
+		close(serverReady) // 立即发出就绪信号
+
+		// 接受producers个连接（每个Producer一个连接）
 		for i := 0; i < producers; i++ {
 			conn, err := listener.Accept()
 			if err != nil {
@@ -193,8 +267,7 @@ func RunTest(producers, consumers, messagesPerProducer, messageSize int) (*utils
 				break
 			}
 			serverWg.Add(1)
-			// ✅ 每个连接预期接收messagesPerProducer条消息
-			go handleConnection(conn, messageSize, &receivedCount, &serverWg, messagesPerProducer)
+			go handleConnection(conn, messageSize, &receivedCount, &errorCount, &serverWg, messagesPerProducer)
 		}
 	}()
 
@@ -206,22 +279,22 @@ func RunTest(producers, consumers, messagesPerProducer, messageSize int) (*utils
 	// 启动生产者
 	for i := 0; i < producers; i++ {
 		producerWg.Add(1)
-		go Producer(i, socketIPC.address, socketIPC.network, messagesPerProducer, messageSize, 
-			&producerWg, &latencies, &mu)
+		go Producer(i, socketIPC.address, socketIPC.network, messagesPerProducer, messageSize,
+			&producerWg, &latencies, &mu, &errorCount, &retransmitCount)
 	}
 
 	// 等待所有生产者完成
 	producerWg.Wait()
-	
+
 	// 给最后的消息一些时间被Accept
 	time.Sleep(500 * time.Millisecond)
-	
+
 	// 关闭listener，停止接受新连接
 	listener.Close()
-	
+
 	// 等待Accept goroutine结束
 	<-acceptDone
-	
+
 	// 等待所有已接受的连接处理完成（带超时）
 	done := make(chan struct{})
 	go func() {
@@ -235,7 +308,7 @@ func RunTest(producers, consumers, messagesPerProducer, messageSize int) (*utils
 	case <-time.After(30 * time.Second):
 		fmt.Printf("警告: 超时，仅接收到 %d/%d 条消息\n", atomic.LoadInt64(&receivedCount), totalMessages)
 	}
-	
+
 	endTime := time.Now()
 
 	totalTime := endTime.Sub(startTime).Seconds()
@@ -254,25 +327,30 @@ func RunTest(producers, consumers, messagesPerProducer, messageSize int) (*utils
 	p99Latency := utils.CalculatePercentile(latencies, 99)
 
 	metrics := &utils.PerformanceMetrics{
-		IPCType:        "socket",
-		Pattern:        fmt.Sprintf("%d_%d", producers, consumers),
-		ProducerCount:  producers,
-		ConsumerCount:  consumers,
-		MessageCount:   totalMessages,
-		MessageSize:    messageSize,
-		TotalTime:      totalTime,
-		Throughput:     throughput,
-		AvgLatency:     avgLatency,
-		P95Latency:     p95Latency,
-		P99Latency:     p99Latency,
-		Timestamp:      time.Now().Format("2006-01-02 15:04:05"),
+		IPCType:         "socket",
+		Pattern:         fmt.Sprintf("%d_%d", producers, consumers),
+		ProducerCount:   producers,
+		ConsumerCount:   consumers,
+		MessageCount:    totalMessages,
+		MessageSize:     messageSize,
+		TotalTime:       totalTime,
+		Throughput:      throughput,
+		AvgLatency:      avgLatency,
+		P95Latency:      p95Latency,
+		P99Latency:      p99Latency,
+		ErrorCount:      int(atomic.LoadInt64(&errorCount)),
+		RetransmitCount: int(atomic.LoadInt64(&retransmitCount)),
+			Accuracy:       float64(totalMessages-int(atomic.LoadInt64(&errorCount)))*100.0/float64(totalMessages),
+		Timestamp:       time.Now().Format("2006-01-02 15:04:05"),
 	}
 
 	fmt.Printf("总耗时: %.6f秒\n", totalTime)
 	fmt.Printf("吞吐量: %.2f 消息/秒\n", throughput)
 	fmt.Printf("平均延迟: %.2f 微秒\n", avgLatency)
 	fmt.Printf("P95延迟: %.2f 微秒\n", p95Latency)
-	fmt.Printf("P99延迟: %.2f 微秒\n\n", p99Latency)
+	fmt.Printf("P99延迟: %.2f 微秒\n", p99Latency)
+	fmt.Printf("错误数: %d, 重传数: %d\n", metrics.ErrorCount, metrics.RetransmitCount)
+	fmt.Printf("数据错误率: %.2f%%\n\n", float64(metrics.ErrorCount)*100.0/float64(totalMessages))
 
 	return metrics, nil
 }

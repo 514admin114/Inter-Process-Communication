@@ -161,7 +161,7 @@ if filtered_df.empty:
 # ==================== 主界面 - 概览统计 ====================
 st.markdown('<div class="sub-header">📈 概览统计</div>', unsafe_allow_html=True)
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
 with col1:
     st.metric("总测试数", len(filtered_df))
 with col2:
@@ -172,6 +172,15 @@ with col3:
 with col4:
     avg_latency = filtered_df['Avg_Latency_Microseconds'].mean()
     st.metric("平均延迟", f"{avg_latency:.2f} μs")
+with col5:
+    total_errors = filtered_df['Error_Count'].sum() if 'Error_Count' in filtered_df.columns else 0
+    st.metric("总错误数", int(total_errors))
+with col6:
+    total_retransmits = filtered_df['Retransmit_Count'].sum() if 'Retransmit_Count' in filtered_df.columns else 0
+    st.metric("总重传数", int(total_retransmits))
+with col7:
+    avg_accuracy = filtered_df['Accuracy'].mean() if 'Accuracy' in filtered_df.columns else 100.0
+    st.metric("平均准确率", f"{avg_accuracy:.2f}%")
 
 st.markdown("---")
 
@@ -248,6 +257,38 @@ with tab1:
         fig_scatter.update_layout(height=450)
         st.plotly_chart(fig_scatter, use_container_width=True)
         
+        # 错误与重传统计图表
+        if 'Error_Count' in lang_data.columns and lang_data['Error_Count'].sum() > 0:
+            col_err1, col_err2 = st.columns(2)
+            
+            with col_err1:
+                fig_errors = px.bar(
+                    lang_data,
+                    x='IPC_Type',
+                    y='Error_Count',
+                    color='Pattern',
+                    title=f'{lang.upper()} - 校验错误数',
+                    labels={'IPC_Type': 'IPC类型', 'Error_Count': '错误数', 'Pattern': '生产-消费模式'},
+                    barmode='group',
+                    color_discrete_sequence=px.colors.qualitative.Set2
+                )
+                fig_errors.update_layout(height=350, xaxis_tickangle=-45)
+                st.plotly_chart(fig_errors, use_container_width=True)
+            
+            with col_err2:
+                fig_retrans = px.bar(
+                    lang_data,
+                    x='IPC_Type',
+                    y='Retransmit_Count',
+                    color='Pattern',
+                    title=f'{lang.upper()} - 重传次数',
+                    labels={'IPC_Type': 'IPC类型', 'Retransmit_Count': '重传数', 'Pattern': '生产-消费模式'},
+                    barmode='group',
+                    color_discrete_sequence=px.colors.qualitative.Pastel1
+                )
+                fig_retrans.update_layout(height=350, xaxis_tickangle=-45)
+                st.plotly_chart(fig_retrans, use_container_width=True)
+        
         st.markdown("---")
 
 # ==================== Tab 2: 纵向对比 ====================
@@ -310,6 +351,36 @@ with tab2:
             )
             fig_grouped.update_layout(height=500)
             st.plotly_chart(fig_grouped, use_container_width=True)
+            
+            # 错误与重传跨语言对比
+            if 'Error_Count' in ipc_data.columns and ipc_data['Retransmit_Count'].sum() > 0:
+                col_err_l1, col_err_l2 = st.columns(2)
+                
+                with col_err_l1:
+                    fig_lang_errors = px.bar(
+                        ipc_data,
+                        x='Language',
+                        y='Error_Count',
+                        color='Language',
+                        title=f'{ipc_type.upper()} - 各语言校验错误数',
+                        labels={'Language': '编程语言', 'Error_Count': '错误数'},
+                        color_discrete_sequence=px.colors.qualitative.Vivid
+                    )
+                    fig_lang_errors.update_layout(height=400)
+                    st.plotly_chart(fig_lang_errors, use_container_width=True)
+                
+                with col_err_l2:
+                    fig_lang_retrans = px.bar(
+                        ipc_data,
+                        x='Language',
+                        y='Retransmit_Count',
+                        color='Language',
+                        title=f'{ipc_type.upper()} - 各语言重传次数',
+                        labels={'Language': '编程语言', 'Retransmit_Count': '重传数'},
+                        color_discrete_sequence=px.colors.qualitative.Bold
+                    )
+                    fig_lang_retrans.update_layout(height=400)
+                    st.plotly_chart(fig_lang_retrans, use_container_width=True)
             
             st.markdown("---")
     else:
@@ -424,7 +495,8 @@ with tab4:
     available_columns = [
         'Language', 'IPC_Type', 'Pattern', 'Producer_Count', 'Consumer_Count',
         'Message_Size', 'Throughput_Msg_Per_Sec', 'Avg_Latency_Microseconds',
-        'P95_Latency_Microseconds', 'P99_Latency_Microseconds', 'Total_Time_Seconds'
+        'P95_Latency_Microseconds', 'P99_Latency_Microseconds', 'Total_Time_Seconds',
+        'Error_Count', 'Retransmit_Count', 'Accuracy'
     ]
     
     selected_columns = st.multiselect(

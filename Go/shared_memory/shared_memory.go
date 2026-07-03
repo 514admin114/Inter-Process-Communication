@@ -1,10 +1,12 @@
 package shared_memory
 
 import (
+	"encoding/binary"
 	"fmt"
+	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"ipc/utils"
 )
@@ -61,28 +63,27 @@ type SharedMemory struct {
 
 // NewSharedMemory 创建共享内存实例
 func NewSharedMemory(messageSize int) *SharedMemory {
-	// 设置缓冲区大小为1000，足够容纳突发消息
+	// 消息包含 data(messageSize) + 4字节checksum
+	totalMsgSize := messageSize + 4
 	queueSize := 1000
-	
+
 	return &SharedMemory{
 		queue:       NewMessageQueue(queueSize),
 		messageSize: messageSize,
 		bufferPool: sync.Pool{
 			New: func() interface{} {
-				buf := make([]byte, messageSize)
+				buf := make([]byte, totalMsgSize)
 				return buf
 			},
 		},
 	}
 }
 
-// Write 写入数据到共享内存
+// Write 写入数据到共享内存 (data should be messageSize+4 bytes: data + checksum)
 func (sm *SharedMemory) Write(data []byte) error {
-	// 从对象池获取缓冲区
+	totalMsgSize := sm.messageSize + 4
 	buf := sm.bufferPool.Get().([]byte)
-	copy(buf, data)
-	
-	// 发送到队列
+	copy(buf, data[:totalMsgSize])
 	return sm.queue.Send(buf)
 }
 
@@ -92,18 +93,21 @@ func (sm *SharedMemory) Read() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
+	totalMsgSize := sm.messageSize + 4
+	// 返回数据副本
+	result := make([]byte, totalMsgSize)
+	copy(result, data[:totalMsgSize])
+
 	// 将缓冲区返回到对象池
 	sm.bufferPool.Put(data)
-	
-	// 返回数据副本
-	result := make([]byte, len(data))
-	copy(result, data)
 	return result, nil
 }
 
 // Producer 生产者函数
-func Producer(id int, sm *SharedMemory, messageCount int, messageSize int, wg *sync.WaitGroup, latencies *[]float64, mu *sync.Mutex) {
+func Producer(id int, sm *SharedMemory, messageCount int, messageSize int,
+	wg *sync.WaitGroup, latencies *[]float64, mu *sync.Mutex,
+	errorCount *int64, retransmitCount *int64) {
 	defer wg.Done()
 
 	data := make([]byte, messageSize)
@@ -111,30 +115,62 @@ func Producer(id int, sm *SharedMemory, messageCount int, messageSize int, wg *s
 		data[i] = byte(i % 256)
 	}
 
+	// Per-goroutine random number generator (thread-safe)
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+
 	for i := 0; i < messageCount; i++ {
 		start := time.Now()
-		
-		if err := sm.Write(data); err != nil {
+
+		// Compute checksum on original data
+		checksum := utils.ComputeChecksum(data)
+		checksumBuf := make([]byte, 4)
+		binary.BigEndian.PutUint32(checksumBuf, checksum)
+
+		// Build message: data + checksum
+		msgData := make([]byte, messageSize+4)
+		copy(msgData, data)
+		copy(msgData[messageSize:], checksumBuf)
+
+		// Error injection: corrupt 1 byte in data portion with ErrorRate probability
+		if rng.Float64() < utils.ErrorRate {
+			corruptPos := rng.Intn(messageSize)
+			msgData[corruptPos] ^= 0xFF
+			atomic.AddInt64(errorCount, 1)
+		}
+
+		if err := sm.Write(msgData); err != nil {
 			fmt.Printf("Producer %d 写入失败: %v\n", id, err)
 			continue
 		}
 
 		elapsed := time.Since(start).Seconds() * 1000000 // 转换为微秒
-		
+
 		mu.Lock()
 		*latencies = append(*latencies, elapsed)
 		mu.Unlock()
 	}
+	// retransmitCount stays 0 for shared_memory
 }
 
-// Consumer 消费者函数
-func Consumer(id int, sm *SharedMemory, messageCount int, wg *sync.WaitGroup) {
+// Consumer 消费者函数 - validates checksum
+func Consumer(id int, sm *SharedMemory, messageCount int, messageSize int,
+	wg *sync.WaitGroup, errorCount *int64) {
 	defer wg.Done()
 
 	for i := 0; i < messageCount; i++ {
-		if _, err := sm.Read(); err != nil {
+		msgData, err := sm.Read()
+		if err != nil {
 			fmt.Printf("Consumer %d 读取失败: %v\n", id, err)
 			continue
+		}
+
+		// Validate checksum: last 4 bytes are checksum, rest is data
+		dataLen := len(msgData) - 4
+		receivedChecksum := binary.BigEndian.Uint32(msgData[dataLen:])
+		computedChecksum := utils.ComputeChecksum(msgData[:dataLen])
+
+		if computedChecksum != receivedChecksum {
+			atomic.AddInt64(errorCount, 1)
 		}
 	}
 }
@@ -142,7 +178,7 @@ func Consumer(id int, sm *SharedMemory, messageCount int, wg *sync.WaitGroup) {
 // RunTest 运行共享内存IPC测试
 func RunTest(producers, consumers, messagesPerProducer, messageSize int) (*utils.PerformanceMetrics, error) {
 	fmt.Printf("\n=== 共享内存测试 ===\n")
-	fmt.Printf("生产者: %d, 消费者: %d, 每个生产者消息数: %d, 消息大小: %d字节\n", 
+	fmt.Printf("生产者: %d, 消费者: %d, 每个生产者消息数: %d, 消息大小: %d字节\n",
 		producers, consumers, messagesPerProducer, messageSize)
 
 	sm := NewSharedMemory(messageSize)
@@ -152,13 +188,15 @@ func RunTest(producers, consumers, messagesPerProducer, messageSize int) (*utils
 	var wg sync.WaitGroup
 	var latencies []float64
 	var mu sync.Mutex
+	var errorCount int64
+	var retransmitCount int64
 
 	startTime := time.Now()
 
 	// 启动消费者
 	for i := 0; i < consumers; i++ {
 		wg.Add(1)
-		go Consumer(i, sm, messagesPerConsumer, &wg)
+		go Consumer(i, sm, messagesPerConsumer, messageSize, &wg, &errorCount)
 	}
 
 	// 短暂等待让消费者准备好
@@ -167,12 +205,12 @@ func RunTest(producers, consumers, messagesPerProducer, messageSize int) (*utils
 	// 启动生产者
 	for i := 0; i < producers; i++ {
 		wg.Add(1)
-		go Producer(i, sm, messagesPerProducer, messageSize, &wg, &latencies, &mu)
+		go Producer(i, sm, messagesPerProducer, messageSize, &wg, &latencies, &mu, &errorCount, &retransmitCount)
 	}
 
 	// 等待所有goroutine完成
 	wg.Wait()
-	
+
 	endTime := time.Now()
 
 	totalTime := endTime.Sub(startTime).Seconds()
@@ -191,30 +229,30 @@ func RunTest(producers, consumers, messagesPerProducer, messageSize int) (*utils
 	p99Latency := utils.CalculatePercentile(latencies, 99)
 
 	metrics := &utils.PerformanceMetrics{
-		IPCType:        "shared_memory",
-		Pattern:        fmt.Sprintf("%d_%d", producers, consumers),
-		ProducerCount:  producers,
-		ConsumerCount:  consumers,
-		MessageCount:   totalMessages,
-		MessageSize:    messageSize,
-		TotalTime:      totalTime,
-		Throughput:     throughput,
-		AvgLatency:     avgLatency,
-		P95Latency:     p95Latency,
-		P99Latency:     p99Latency,
-		Timestamp:      time.Now().Format("2006-01-02 15:04:05"),
+		IPCType:         "shared_memory",
+		Pattern:         fmt.Sprintf("%d_%d", producers, consumers),
+		ProducerCount:   producers,
+		ConsumerCount:   consumers,
+		MessageCount:    totalMessages,
+		MessageSize:     messageSize,
+		TotalTime:       totalTime,
+		Throughput:      throughput,
+		AvgLatency:      avgLatency,
+		P95Latency:      p95Latency,
+		P99Latency:      p99Latency,
+		ErrorCount:      int(atomic.LoadInt64(&errorCount)),
+		RetransmitCount: int(atomic.LoadInt64(&retransmitCount)),
+			Accuracy:       float64(totalMessages-int(atomic.LoadInt64(&errorCount)))*100.0/float64(totalMessages),
+		Timestamp:       time.Now().Format("2006-01-02 15:04:05"),
 	}
 
 	fmt.Printf("总耗时: %.6f秒\n", totalTime)
 	fmt.Printf("吞吐量: %.2f 消息/秒\n", throughput)
 	fmt.Printf("平均延迟: %.2f 微秒\n", avgLatency)
 	fmt.Printf("P95延迟: %.2f 微秒\n", p95Latency)
-	fmt.Printf("P99延迟: %.2f 微秒\n\n", p99Latency)
+	fmt.Printf("P99延迟: %.2f 微秒\n", p99Latency)
+	fmt.Printf("错误数: %d, 重传数: %d\n", metrics.ErrorCount, metrics.RetransmitCount)
+	fmt.Printf("数据错误率: %.2f%%\n\n", float64(metrics.ErrorCount)*100.0/float64(totalMessages))
 
 	return metrics, nil
-}
-
-// GetUnsafeSize 获取unsafe.Pointer的大小（用于验证）
-func GetUnsafeSize() uintptr {
-	return unsafe.Sizeof(unsafe.Pointer(nil))
 }

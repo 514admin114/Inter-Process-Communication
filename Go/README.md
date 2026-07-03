@@ -92,7 +92,7 @@ config.messagesPerProd = 1000                      // 1000条消息
 结果保存到 `../csv/ipc_performance_go.csv`:
 
 ```csv
-Timestamp,IPC_Type,Pattern,Producer_Count,Consumer_Count,Message_Count,Message_Size,Total_Time_Seconds,Throughput_Msg_Per_Sec,Avg_Latency_Microseconds,P95_Latency_Microseconds,P99_Latency_Microseconds,Success
+Timestamp,IPC_Type,Pattern,Producer_Count,Consumer_Count,Message_Count,Message_Size,Total_Time_Seconds,Throughput_Msg_Per_Sec,Avg_Latency_Microseconds,P95_Latency_Microseconds,P99_Latency_Microseconds,Error_Count,Retransmit_Count,Success
 ```
 
 ### 字段说明
@@ -107,6 +107,8 @@ Timestamp,IPC_Type,Pattern,Producer_Count,Consumer_Count,Message_Count,Message_S
 - `Throughput_Msg_Per_Sec`: 吞吐量(消息/秒)
 - `Avg_Latency_Microseconds`: 平均延迟(微秒)
 - `P95/P99_Latency_Microseconds`: P95/P99延迟(微秒)
+- `Error_Count`: 校验错误数
+- `Retransmit_Count`: 重传次数
 - `Success`: 测试是否成功(true/false)
 
 ### 统计信息
@@ -144,11 +146,19 @@ streamlit run ipc_analyzer.py
 
 ### IPC技术对比
 
-| IPC方式 | 吞吐量 | 延迟 | 适用场景 |
-|---------|--------|------|----------|
-| **共享内存** | 最高 | 最低 | 同机进程通信 |
-| **Socket IPC** | 中等 | 中等 | 本地进程隔离通信 |
-| **TCP Socket** | 较低 | 较高 | 跨网络通信 |
+| IPC方式 | 吞吐量 | 延迟 | 数据校验 | 适用场景 |
+|---------|--------|------|----------|----------|
+| **共享内存** | 最高 | 最低 | 校验和 | 同机进程通信 |
+| **Socket IPC** | 中等 | 中等 | ACK/NACK重传 | 本地进程隔离通信 |
+| **TCP Socket** | 较低 | 较高 | ACK/NACK重传 | 跨网络通信 |
+
+### 数据校验与重传协议
+Socket/TCP 通信实现了数据完整性保障：
+- **累加和校验**: `ComputeChecksum()` 求和所有字节模 2^32
+- **错误注入**: 1% 概率随机字节翻转（`ErrorRate = 0.01`）
+- **ACK/NACK**: 消费者返回单字节应答，失败时生产者重传原始正确数据
+- **最大重传**: 3 次 (`MaxRetransmit = 3`)
+- **线格式**: `[4B 头 = messageSize+4, 大端序] [数据] [4B 校验和, 大端序]`
 
 ### 性能排序(通常情况)
 1. **共享内存**: 最快,延迟最低(微秒级)
