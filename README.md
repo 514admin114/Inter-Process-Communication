@@ -185,7 +185,7 @@ streamlit run ipc_analyzer.py
 - **错误注入**: 每条消息以 1% 的概率随机翻转一个数据字节，模拟传输错误
 - **ACK/NACK 重传**: 消费者校验后回复 ACK (0x01) 或 NACK (0x00)，生产者最多重传 3 次
 - **线格式**: `[4B 头 = messageSize+4] [数据] [4B 校验和]`
-- **共享内存**: 仅进行校验和验证和错误计数，无需重传（进程内通信）
+- **共享内存**: 进行校验和验证、错误注入和错误计数，无需重传（进程内通信）
 
 ## 📈 性能指标
 
@@ -198,6 +198,7 @@ streamlit run ipc_analyzer.py
 - **总耗时 (Total Time)**: 测试执行总时间 (秒)
 - **错误数 (Error Count)**: 校验和验证失败的消息数
 - **重传数 (Retransmit Count)**: Socket/TCP 通信中执行的累计重传次数
+- **准确率 (Accuracy)**: 无错误传输的消息百分比
 
 ## 📁 输出结果
 
@@ -211,7 +212,7 @@ streamlit run ipc_analyzer.py
 ### CSV格式
 
 ```csv
-Timestamp,IPC_Type,Pattern,Producer_Count,Consumer_Count,Message_Count,Message_Size,Total_Time_Seconds,Throughput_Msg_Per_Sec,Avg_Latency_Microseconds,P95_Latency_Microseconds,P99_Latency_Microseconds,Error_Count,Retransmit_Count,Success
+Timestamp,IPC_Type,Pattern,Producer_Count,Consumer_Count,Message_Count,Message_Size,Total_Time_Seconds,Throughput_Msg_Per_Sec,Avg_Latency_Microseconds,P95_Latency_Microseconds,P99_Latency_Microseconds,Error_Count,Retransmit_Count,Accuracy,Success
 ```
 
 ## 🔍 预期性能对比
