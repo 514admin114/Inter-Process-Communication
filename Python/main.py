@@ -1,6 +1,7 @@
 import sys
 import os
 import time
+import json
 from shared_memory.shared_memory import run_test as shared_memory_test
 from socket_ipc.socket_ipc import run_test as socket_test
 from tcp_ipc.tcp_ipc import run_test as tcp_test
@@ -15,6 +16,25 @@ class TestConfig:
         self.producer_counts = []    # 生产者数量列表
         self.consumer_counts = []    # 消费者数量列表
         self.messages_per_prod = 0   # 每个生产者的消息数
+
+
+def load_config(path="../config.json"):
+    """从JSON文件加载测试配置"""
+    config = TestConfig()
+    config.message_sizes = [64, 1024]
+    config.producer_counts = [1, 2, 4]
+    config.consumer_counts = [1, 2, 4]
+    config.messages_per_prod = 500
+    try:
+        with open(path, 'r') as f:
+            data = json.load(f)
+        config.message_sizes = data.get("message_sizes", config.message_sizes)
+        config.producer_counts = data.get("producer_counts", config.producer_counts)
+        config.consumer_counts = data.get("consumer_counts", config.consumer_counts)
+        config.messages_per_prod = data.get("messages_per_producer", config.messages_per_prod)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Warning: cannot load {path}, using defaults ({e})")
+    return config
 
 
 def print_summary(metrics_list):
@@ -83,20 +103,8 @@ def main():
     if os.path.exists(csv_path):
         os.remove(csv_path)
     
-    # 测试配置 - 简化版用于快速测试
-    config = TestConfig()
-    config.message_sizes = [64, 1024]           # 64B, 1KB (简化测试)
-    config.producer_counts = [1, 2, 4]          # 1, 2, 4个生产者
-    config.consumer_counts = [1, 2, 4]          # 1, 2, 4个消费者
-    config.messages_per_prod = 500              # 每个生产者发送500条消息(简化)
-    
-    # 如需完整测试，使用以下配置：
-    """
-    config.message_sizes = [64, 256, 1024, 4096]  # 64B, 256B, 1KB, 4KB
-    config.producer_counts = [1, 2, 4, 8]         # 1, 2, 4, 8个生产者
-    config.consumer_counts = [1, 2, 4, 8]         # 1, 2, 4, 8个消费者
-    config.messages_per_prod = 1000               # 每个生产者发送1000条消息
-    """
+    # 从共享配置文件加载测试参数
+    config = load_config("../config.json")
     
     print("测试配置:")
     print(f"- 消息大小: {config.message_sizes} 字节")

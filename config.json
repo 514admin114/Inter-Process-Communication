@@ -1,0 +1,17 @@
+{
+    "message_sizes": [
+        64,
+        1024
+    ],
+    "producer_counts": [
+        1,
+        2,
+        4
+    ],
+    "consumer_counts": [
+        1,
+        2,
+        4
+    ],
+    "messages_per_producer": 500
+}

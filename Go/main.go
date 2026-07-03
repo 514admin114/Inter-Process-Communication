@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"time"
 
@@ -13,10 +15,29 @@ import (
 
 // TestConfig 测试配置
 type TestConfig struct {
-	MessageSizes     []int // 消息大小列表（字节）
-	ProducerCounts   []int // 生产者数量列表
-	ConsumerCounts   []int // 消费者数量列表
-	MessagesPerProd  int   // 每个生产者的消息数
+	MessageSizes    []int `json:"message_sizes"`
+	ProducerCounts  []int `json:"producer_counts"`
+	ConsumerCounts  []int `json:"consumer_counts"`
+	MessagesPerProd int   `json:"messages_per_producer"`
+}
+
+// loadConfig loads test configuration from a JSON file
+func loadConfig(path string) TestConfig {
+	config := TestConfig{
+		MessageSizes:    []int{64, 1024},
+		ProducerCounts:  []int{1, 2, 4},
+		ConsumerCounts:  []int{1, 2, 4},
+		MessagesPerProd: 500,
+	}
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		fmt.Printf("Warning: cannot open %s, using defaults\n", path)
+		return config
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		fmt.Printf("Warning: failed to parse %s, using defaults\n", path)
+	}
+	return config
 }
 
 func main() {
@@ -34,23 +55,8 @@ func main() {
 	// Remove old CSV file for clean overwrite
 	os.Remove("../csv/ipc_performance_go.csv")
 
-	// 测试配置 - 简化版用于快速测试
-	config := TestConfig{
-		MessageSizes:    []int{64, 1024},           // 64B, 1KB (简化测试)
-		ProducerCounts:  []int{1, 2, 4},            // 1, 2, 4个生产者
-		ConsumerCounts:  []int{1, 2, 4},            // 1, 2, 4个消费者
-		MessagesPerProd: 500,                        // 每个生产者发送500条消息(简化)
-	}
-
-	// 如需完整测试，使用以下配置：
-	/*
-	config := TestConfig{
-		MessageSizes:    []int{64, 256, 1024, 4096}, // 64B, 256B, 1KB, 4KB
-		ProducerCounts:  []int{1, 2, 4, 8},          // 1, 2, 4, 8个生产者
-		ConsumerCounts:  []int{1, 2, 4, 8},          // 1, 2, 4, 8个消费者
-		MessagesPerProd: 1000,                        // 每个生产者发送1000条消息
-	}
-	*/
+	// 从共享配置文件加载测试参数
+	config := loadConfig("../config.json")
 
 	fmt.Println("测试配置:")
 	fmt.Printf("- 消息大小: %v 字节\n", config.MessageSizes)

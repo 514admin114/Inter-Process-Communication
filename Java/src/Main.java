@@ -5,6 +5,9 @@ import ipc.utils.PerformanceMetrics;
 import ipc.utils.MetricsUtils;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.*;
 
 public class Main {
@@ -23,6 +26,65 @@ public class Main {
         }
     }
     
+    // 从JSON文件加载测试配置（手动解析，无需第三方库）
+    private static TestConfig loadConfig(String path) {
+        TestConfig config = new TestConfig();
+        try {
+            String json = new String(Files.readAllBytes(Paths.get(path)));
+            config.messageSizes = parseIntArray(json, "message_sizes");
+            config.producerCounts = parseIntArray(json, "producer_counts");
+            config.consumerCounts = parseIntArray(json, "consumer_counts");
+            config.messagesPerProd = parseInt(json, "messages_per_producer");
+            return config;
+        } catch (IOException e) {
+            System.err.println("Warning: cannot open " + path + ", using defaults");
+        }
+        // 默认配置
+        config.messageSizes = Arrays.asList(64, 1024);
+        config.producerCounts = Arrays.asList(1, 2, 4);
+        config.consumerCounts = Arrays.asList(1, 2, 4);
+        config.messagesPerProd = 500;
+        return config;
+    }
+    
+    // 从JSON中解析整数数组: "key": [1, 2, 4]
+    private static List<Integer> parseIntArray(String json, String key) {
+        List<Integer> result = new ArrayList<>();
+        int keyIdx = json.indexOf("\"" + key + "\"");
+        if (keyIdx < 0) return result;
+        int start = json.indexOf("[", keyIdx);
+        if (start < 0) return result;
+        int end = json.indexOf("]", start);
+        if (end < 0) return result;
+        String arr = json.substring(start + 1, end);
+        for (String token : arr.split(",")) {
+            token = token.trim();
+            if (!token.isEmpty()) {
+                result.add(Integer.parseInt(token));
+            }
+        }
+        return result;
+    }
+    
+    // 从JSON中解析整数: "key": 500
+    private static int parseInt(String json, String key) {
+        int keyIdx = json.indexOf("\"" + key + "\"");
+        if (keyIdx < 0) return 0;
+        int colon = json.indexOf(":", keyIdx);
+        if (colon < 0) return 0;
+        String rest = json.substring(colon + 1).trim();
+        StringBuilder num = new StringBuilder();
+        for (int i = 0; i < rest.length(); i++) {
+            char c = rest.charAt(i);
+            if (Character.isDigit(c) || c == '-') {
+                num.append(c);
+            } else if (num.length() > 0) {
+                break;
+            }
+        }
+        return num.length() > 0 ? Integer.parseInt(num.toString()) : 0;
+    }
+    
     public static void main(String[] args) {
         System.out.println("========================================");
         System.out.println("  进程间通信(IPC)性能测试程序");
@@ -38,20 +100,8 @@ public class Main {
         // Remove old CSV file for clean overwrite
         new File("../csv/ipc_performance_java.csv").delete();
         
-        // 测试配置 - 简化版用于快速测试
-        TestConfig config = new TestConfig();
-        config.messageSizes = Arrays.asList(64, 1024);           // 64B, 1KB (简化测试)
-        config.producerCounts = Arrays.asList(1, 2, 4);          // 1, 2, 4个生产者
-        config.consumerCounts = Arrays.asList(1, 2, 4);          // 1, 2, 4个消费者
-        config.messagesPerProd = 500;                            // 每个生产者发送500条消息(简化)
-        
-        // 如需完整测试，使用以下配置：
-        /*
-        config.messageSizes = Arrays.asList(64, 256, 1024, 4096); // 64B, 256B, 1KB, 4KB
-        config.producerCounts = Arrays.asList(1, 2, 4, 8);        // 1, 2, 4, 8个生产者
-        config.consumerCounts = Arrays.asList(1, 2, 4, 8);        // 1, 2, 4, 8个消费者
-        config.messagesPerProd = 1000;                            // 每个生产者发送1000条消息
-        */
+        // 从共享配置文件加载测试参数
+        TestConfig config = loadConfig("../config.json");
         
         System.out.println("测试配置:");
         System.out.println("- 消息大小: " + config.messageSizes + " 字节");

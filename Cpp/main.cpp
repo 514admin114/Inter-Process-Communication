@@ -4,6 +4,8 @@
 #include <thread>
 #include <chrono>
 #include <iomanip>
+#include <fstream>
+#include <sstream>
 
 #include "utils/metrics.h"
 #include <cstdio>
@@ -17,6 +19,61 @@ struct TestConfig {
     std::vector<int> consumerCounts;
     int messagesPerProd;
 };
+
+// Parse integer array from JSON: "key": [1, 2, 4]
+std::vector<int> parseIntArray(const std::string& json, const std::string& key) {
+    std::vector<int> result;
+    size_t pos = json.find("\"" + key + "\"");
+    if (pos == std::string::npos) return result;
+    pos = json.find("[", pos);
+    if (pos == std::string::npos) return result;
+    size_t end = json.find("]", pos);
+    if (end == std::string::npos) return result;
+    std::string arr = json.substr(pos + 1, end - pos - 1);
+    std::stringstream ss(arr);
+    std::string token;
+    while (std::getline(ss, token, ',')) {
+        // Trim whitespace and parse
+        size_t first = token.find_first_not_of(" \t\r\n");
+        size_t last = token.find_last_not_of(" \t\r\n");
+        if (first != std::string::npos)
+            result.push_back(std::stoi(token.substr(first, last - first + 1)));
+    }
+    return result;
+}
+
+// Parse single integer from JSON: "key": 500
+int parseInt(const std::string& json, const std::string& key) {
+    size_t pos = json.find("\"" + key + "\"");
+    if (pos == std::string::npos) return 0;
+    pos = json.find(":", pos);
+    if (pos == std::string::npos) return 0;
+    pos = json.find_first_not_of(": \t\r\n", pos);
+    if (pos == std::string::npos) return 0;
+    return std::stoi(json.substr(pos));
+}
+
+TestConfig loadConfig(const std::string& path) {
+    TestConfig config;
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        std::cerr << "Warning: cannot open " << path << ", using defaults" << std::endl;
+        config.messageSizes = {64, 1024};
+        config.producerCounts = {1, 2, 4};
+        config.consumerCounts = {1, 2, 4};
+        config.messagesPerProd = 500;
+        return config;
+    }
+    std::stringstream buf;
+    buf << file.rdbuf();
+    std::string json = buf.str();
+    
+    config.messageSizes = parseIntArray(json, "message_sizes");
+    config.producerCounts = parseIntArray(json, "producer_counts");
+    config.consumerCounts = parseIntArray(json, "consumer_counts");
+    config.messagesPerProd = parseInt(json, "messages_per_producer");
+    return config;
+}
 
 void printMetrics(const PerformanceMetrics& metrics) {
     std::cout << "\n=== " << metrics.ipcType << " Test ===" << std::endl;
@@ -52,18 +109,8 @@ int main() {
     // Remove old CSV file for clean overwrite
     std::remove("../csv/ipc_performance_cpp.csv");
     
-    // Test configuration - simplified version for quick testing
-    TestConfig config;
-    config.messageSizes = {64, 1024};           // 64B, 1KB (simplified)
-    config.producerCounts = {1, 2, 4};          // 1, 2, 4 producers
-    config.consumerCounts = {1, 2, 4};          // 1, 2, 4 consumers
-    config.messagesPerProd = 500;               // 500 messages per producer (simplified)
-
-    // // 如需完整测试，使用以下配置：
-    // config.messageSizes = {64, 256, 1024, 4096};  // 4种大小
-    // config.producerCounts = {1, 2, 4, 8};         // 4种数量
-    // config.consumerCounts = {1, 2, 4, 8};         // 4种数量
-    // config.messagesPerProd = 1000;                 // 1000条消息
+    // Load shared configuration from config.json
+    TestConfig config = loadConfig("../config.json");
     
 
     std::cout << "Test Configuration:" << std::endl;
