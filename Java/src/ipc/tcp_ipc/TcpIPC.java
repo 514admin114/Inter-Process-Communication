@@ -27,7 +27,7 @@ public class TcpIPC {
         ServerSocket listener = new ServerSocket(0);
         this.port = listener.getLocalPort();
         this.address = "127.0.0.1:" + this.port;
-        System.out.println("TCP服务器监听地址: " + this.address);
+        System.out.println("TCP Server listening address: " + this.address);
         return listener;
     }
     
@@ -60,7 +60,7 @@ public class TcpIPC {
         }
         
         if (conn == null) {
-            System.err.println("Producer " + id + " 无法建立连接");
+            System.err.println("Producer " + id + " connection failed");
             return;
         }
         
@@ -133,7 +133,7 @@ public class TcpIPC {
                 }
             }
         } catch (IOException e) {
-            System.err.println("Producer " + id + " 发送失败: " + e.getMessage());
+            System.err.println("Producer " + id + " send failed: " + e.getMessage());
         } finally {
             try {
                 if (conn != null) conn.close();
@@ -210,8 +210,8 @@ public class TcpIPC {
     // 运行TCP IPC测试
     public static PerformanceMetrics runTest(int producers, int consumers, 
                                             int messagesPerProducer, int messageSize) {
-        System.out.println("\n=== TCP Socket测试 ===");
-        System.out.printf("生产者: %d, 消费者: %d, 每个生产者消息数: %d, 消息大小: %d字节%n",
+        System.out.println("\n=== TCP Socket Test ===");
+        System.out.printf("Producers: %d, Consumers: %d, Messages per Producer: %d, Message Size: %d bytes%n",
             producers, consumers, messagesPerProducer, messageSize);
         
         TcpIPC tcpIPC = new TcpIPC(messageSize);
@@ -221,7 +221,7 @@ public class TcpIPC {
         try {
             listener = tcpIPC.startServer();
         } catch (IOException e) {
-            System.err.println("启动TCP服务器失败: " + e.getMessage());
+            System.err.println("Failed to start TCP server: " + e.getMessage());
             PerformanceMetrics metrics = new PerformanceMetrics();
             metrics.success = false;
             return metrics;
@@ -248,7 +248,7 @@ public class TcpIPC {
                     final int expectedMsgs = messagesPerProducer;
                     executor.submit(() -> handleConnection(conn, messageSize, receivedCount, errorCounter, expectedMsgs));
                 } catch (IOException e) {
-                    System.err.println("Accept错误 (已接受 " + i + "/" + producers + " 个连接): " + e.getMessage());
+                    System.err.println("Accept error (accepted " + i + "/" + producers + " connections): " + e.getMessage());
                     break;
                 }
             }
@@ -344,14 +344,14 @@ public class TcpIPC {
         metrics.timestamp = MetricsUtils.getCurrentTimestamp();
         metrics.success = true;
         
-        System.out.printf("总耗时: %.6f秒%n", totalTime);
-        System.out.printf("吞吐量: %.2f 消息/秒%n", throughput);
-        System.out.printf("平均延迟: %.2f 微秒%n", avgLatency);
-        System.out.printf("P95延迟: %.2f 微秒%n", p95Latency);
-        System.out.printf("P99延迟: %.2f 微秒%n", p99Latency);
-        System.out.printf("错误数: %d, 重传数: %d%n", metrics.errorCount, metrics.retransmitCount);
+        System.out.printf("Total Time: %.6f seconds%n", totalTime);
+        System.out.printf("Throughput: %.2f messages/sec%n", throughput);
+        System.out.printf("Average Latency: %.2f microseconds%n", avgLatency);
+        System.out.printf("P95 Latency: %.2f microseconds%n", p95Latency);
+        System.out.printf("P99 Latency: %.2f microseconds%n", p99Latency);
+        System.out.printf("Error Count: %d, Retransmit Count: %d%n", metrics.errorCount, metrics.retransmitCount);
         double errorRate = (totalMessages > 0) ? (metrics.errorCount * 100.0 / totalMessages) : 0.0;
-        System.out.printf("数据错误率: %.2f%%%n%n", errorRate);
+        System.out.printf("Error Rate: %.2f%%%n%n", errorRate);
         
         return metrics;
     }

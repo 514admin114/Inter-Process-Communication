@@ -43,7 +43,7 @@ def ensure_data_dir():
         os.makedirs(data_dir, exist_ok=True)
         return True
     except Exception as e:
-        print(f"创建数据目录失败: {e}")
+        print(f"Failed to create data directory: {e}")
         return False
 
 
@@ -111,7 +111,7 @@ def save_to_csv(metrics, filename):
         
         return True
     except Exception as e:
-        print(f"写入CSV文件失败: {e}")
+        print(f"Failed to write CSV file: {e}")
         return False
 
 
@@ -138,5 +138,5 @@ def append_statistics(filename, total_tests, success_tests, failed_tests):
         
         return True
     except Exception as e:
-        print(f"写入统计信息失败: {e}")
+        print(f"Failed to write statistics: {e}")
         return False

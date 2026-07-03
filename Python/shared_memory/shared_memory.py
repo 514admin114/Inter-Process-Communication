@@ -75,7 +75,7 @@ def producer(id, sm, message_count, message_size, latencies, latencies_lock,
         try:
             sm.write(bytes(msg_data))
         except Exception as e:
-            print(f"Producer {id} 写入失败: {e}")
+            print(f"Producer {id} write failed: {e}")
             continue
         
         elapsed = (time.time_ns() - start) / 1000  # 转换为微秒
@@ -90,7 +90,7 @@ def consumer(id, sm, message_count, message_size, error_count, error_lock):
         try:
             msg_data = sm.read()
         except Exception as e:
-            print(f"Consumer {id} 读取失败: {e}")
+            print(f"Consumer {id} read failed: {e}")
             break
         
         # Validate checksum: last 4 bytes are checksum, rest is data
@@ -105,8 +105,8 @@ def consumer(id, sm, message_count, message_size, error_count, error_lock):
 
 def run_test(producers, consumers, messages_per_producer, message_size):
     """运行共享内存IPC测试"""
-    print("\n=== 共享内存测试 ===")
-    print(f"生产者: {producers}, 消费者: {consumers}, 每个生产者消息数: {messages_per_producer}, 消息大小: {message_size}字节")
+    print("\n=== Shared Memory Test ===")
+    print(f"Producers: {producers}, Consumers: {consumers}, Messages per Producer: {messages_per_producer}, Message Size: {message_size} bytes")
     
     sm = SharedMemory(message_size)
     total_messages = producers * messages_per_producer
@@ -180,13 +180,13 @@ def run_test(producers, consumers, messages_per_producer, message_size):
     metrics.timestamp = get_current_timestamp()
     metrics.success = True
     
-    print(f"总耗时: {total_time:.6f}秒")
-    print(f"吞吐量: {throughput:.2f} 消息/秒")
-    print(f"平均延迟: {avg_latency:.2f} 微秒")
-    print(f"P95延迟: {p95_latency:.2f} 微秒")
-    print(f"P99延迟: {p99_latency:.2f} 微秒")
-    print(f"错误数: {metrics.error_count}, 重传数: {metrics.retransmit_count}")
+    print(f"Total Time: {total_time:.6f} seconds")
+    print(f"Throughput: {throughput:.2f} messages/sec")
+    print(f"Average Latency: {avg_latency:.2f} microseconds")
+    print(f"P95 Latency: {p95_latency:.2f} microseconds")
+    print(f"P99 Latency: {p99_latency:.2f} microseconds")
+    print(f"Error Count: {metrics.error_count}, Retransmit Count: {metrics.retransmit_count}")
     error_rate = (metrics.error_count * 100.0 / total_messages) if total_messages > 0 else 0.0
-    print(f"数据错误率: {error_rate:.2f}%\n")
+    print(f"Error Rate: {error_rate:.2f}%\n")
     
     return metrics

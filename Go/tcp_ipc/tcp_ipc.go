@@ -31,12 +31,12 @@ func NewTCPIPC(messageSize int) *TCPIPC {
 func (t *TCPIPC) StartServer() (net.Listener, error) {
 	listener, err := net.Listen("tcp", t.address)
 	if err != nil {
-		return nil, fmt.Errorf("启动TCP监听失败: %v", err)
+		return nil, fmt.Errorf("failed to start TCP listener: %v", err)
 	}
 
 	// 获取实际监听的地址
 	t.address = listener.Addr().String()
-	fmt.Printf("TCP服务器监听地址: %s\n", t.address)
+	fmt.Printf("TCP Server listening address: %s\n", t.address)
 
 	return listener, nil
 }
@@ -87,7 +87,7 @@ func Producer(id int, address string, messageCount int, messageSize int,
 	}
 
 	if err != nil {
-		fmt.Printf("Producer %d 无法建立连接: %v\n", id, err)
+		fmt.Printf("Producer %d connection failed: %v\n", id, err)
 		return
 	}
 	defer conn.Close()
@@ -200,8 +200,8 @@ func handleConnection(conn net.Conn, messageSize int, receivedCount *int64,
 
 // RunTest 运行TCP IPC测试
 func RunTest(producers, consumers, messagesPerProducer, messageSize int) (*utils.PerformanceMetrics, error) {
-	fmt.Printf("\n=== TCP Socket测试 ===\n")
-	fmt.Printf("生产者: %d, 消费者: %d, 每个生产者消息数: %d, 消息大小: %d字节\n",
+	fmt.Printf("\n=== TCP Socket Test ===\n")
+	fmt.Printf("Producers: %d, Consumers: %d, Messages per Producer: %d, Message Size: %d bytes\n",
 		producers, consumers, messagesPerProducer, messageSize)
 
 	tcpIPC := NewTCPIPC(messageSize)
@@ -234,7 +234,7 @@ func RunTest(producers, consumers, messagesPerProducer, messageSize int) (*utils
 		for i := 0; i < producers; i++ {
 			conn, err := listener.Accept()
 			if err != nil {
-				fmt.Printf("Accept错误 (已接受 %d/%d 个连接): %v\n", i, producers, err)
+				fmt.Printf("Accept error (accepted %d/%d connections): %v\n", i, producers, err)
 				break
 			}
 			serverWg.Add(1)
@@ -277,7 +277,7 @@ func RunTest(producers, consumers, messagesPerProducer, messageSize int) (*utils
 	case <-done:
 		// 正常完成
 	case <-time.After(30 * time.Second):
-		fmt.Printf("警告: 超时，仅接收到 %d/%d 条消息\n", atomic.LoadInt64(&receivedCount), totalMessages)
+		fmt.Printf("Warning: timeout, only received %d/%d messages\n", atomic.LoadInt64(&receivedCount), totalMessages)
 	}
 
 	endTime := time.Now()
@@ -315,13 +315,13 @@ func RunTest(producers, consumers, messagesPerProducer, messageSize int) (*utils
 		Timestamp:       time.Now().Format("2006-01-02 15:04:05"),
 	}
 
-	fmt.Printf("总耗时: %.6f秒\n", totalTime)
-	fmt.Printf("吞吐量: %.2f 消息/秒\n", throughput)
-	fmt.Printf("平均延迟: %.2f 微秒\n", avgLatency)
-	fmt.Printf("P95延迟: %.2f 微秒\n", p95Latency)
-	fmt.Printf("P99延迟: %.2f 微秒\n", p99Latency)
-	fmt.Printf("错误数: %d, 重传数: %d\n", metrics.ErrorCount, metrics.RetransmitCount)
-	fmt.Printf("数据错误率: %.2f%%\n\n", float64(metrics.ErrorCount)*100.0/float64(totalMessages))
+	fmt.Printf("Total Time: %.6f seconds\n", totalTime)
+	fmt.Printf("Throughput: %.2f messages/sec\n", throughput)
+	fmt.Printf("Average Latency: %.2f microseconds\n", avgLatency)
+	fmt.Printf("P95 Latency: %.2f microseconds\n", p95Latency)
+	fmt.Printf("P99 Latency: %.2f microseconds\n", p99Latency)
+	fmt.Printf("Error Count: %d, Retransmit Count: %d\n", metrics.ErrorCount, metrics.RetransmitCount)
+	fmt.Printf("Error Rate: %.2f%%\n\n", float64(metrics.ErrorCount)*100.0/float64(totalMessages))
 
 	return metrics, nil
 }

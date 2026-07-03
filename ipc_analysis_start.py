@@ -146,12 +146,15 @@ def tab_config():
 def run_command(lang_name, commands, cwd):
     """在指定目录执行命令并返回结果"""
     output_lines = []
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
     try:
         for cmd in commands:
             output_lines.append(f">>> {cmd}")
             result = subprocess.run(
                 cmd, shell=True, cwd=str(cwd),
-                capture_output=True, encoding='utf-8', errors='replace', timeout=600
+                capture_output=True, encoding='utf-8', errors='replace', timeout=600,
+                env=env
             )
             if result.stdout:
                 output_lines.append(result.stdout)
@@ -186,6 +189,24 @@ def tab_launch():
 
     st.divider()
 
+    # 初始化 session_state 存储输出
+    for key in ["cpp_output", "go_output", "java_output", "py_output"]:
+        if key not in st.session_state:
+            st.session_state[key] = None
+
+    def show_output(session_key, lang_name):
+        """从 session_state 读取并显示持久化的输出"""
+        data = st.session_state.get(session_key)
+        if data is None:
+            return
+        output, ok, code = data
+        if ok:
+            st.success(f"{lang_name} 测试完成!")
+        else:
+            st.error(f"{lang_name} 测试异常 (退出码: {code})")
+        with st.expander("查看输出", expanded=True):
+            st.code(output, language="text")
+
     # -- C++ --
     st.subheader("C++")
     cpp_dir = PROJECT_ROOT / "Cpp"
@@ -197,17 +218,11 @@ def tab_launch():
         if st.button("编译并运行 C++", type="primary", key="cpp_btn"):
             with col_cpp2:
                 with st.spinner("正在编译运行 C++ 测试..."):
-                    output, ok, code = run_command(
-                        "C++",
-                        [cpp_compile, cpp_run],
-                        cpp_dir
-                    )
-                    if ok:
-                        st.success("C++ 测试完成!")
-                    else:
-                        st.error(f"C++ 测试异常 (退出码: {code})")
-                    with st.expander("查看输出", expanded=False):
-                        st.code(output, language="text")
+                    result = run_command("C++", [cpp_compile, cpp_run], cpp_dir)
+                    st.session_state["cpp_output"] = result
+                    st.rerun()
+    with col_cpp2:
+        show_output("cpp_output", "C++")
 
     st.divider()
 
@@ -220,17 +235,11 @@ def tab_launch():
         if st.button("编译并运行 Go", type="primary", key="go_btn"):
             with col_go2:
                 with st.spinner("正在编译运行 Go 测试..."):
-                    output, ok, code = run_command(
-                        "Go",
-                        ["go run main.go"],
-                        go_dir
-                    )
-                    if ok:
-                        st.success("Go 测试完成!")
-                    else:
-                        st.error(f"Go 测试异常 (退出码: {code})")
-                    with st.expander("查看输出", expanded=False):
-                        st.code(output, language="text")
+                    result = run_command("Go", ["go run main.go"], go_dir)
+                    st.session_state["go_output"] = result
+                    st.rerun()
+    with col_go2:
+        show_output("go_output", "Go")
 
     st.divider()
 
@@ -249,17 +258,11 @@ def tab_launch():
         if st.button("编译并运行 Java", type="primary", key="java_btn"):
             with col_java2:
                 with st.spinner("正在编译运行 Java 测试..."):
-                    output, ok, code = run_command(
-                        "Java",
-                        [java_compile, java_run],
-                        java_dir
-                    )
-                    if ok:
-                        st.success("Java 测试完成!")
-                    else:
-                        st.error(f"Java 测试异常 (退出码: {code})")
-                    with st.expander("查看输出", expanded=False):
-                        st.code(output, language="text")
+                    result = run_command("Java", [java_compile, java_run], java_dir)
+                    st.session_state["java_output"] = result
+                    st.rerun()
+    with col_java2:
+        show_output("java_output", "Java")
 
     st.divider()
 
@@ -272,17 +275,11 @@ def tab_launch():
         if st.button("运行 Python", type="primary", key="py_btn"):
             with col_py2:
                 with st.spinner("正在运行 Python 测试..."):
-                    output, ok, code = run_command(
-                        "Python",
-                        ["py main.py"],
-                        py_dir
-                    )
-                    if ok:
-                        st.success("Python 测试完成!")
-                    else:
-                        st.error(f"Python 测试异常 (退出码: {code})")
-                    with st.expander("查看输出", expanded=False):
-                        st.code(output, language="text")
+                    result = run_command("Python", ["py main.py"], py_dir)
+                    st.session_state["py_output"] = result
+                    st.rerun()
+    with col_py2:
+        show_output("py_output", "Python")
 
     st.divider()
     st.caption(f"项目根目录: {PROJECT_ROOT}")

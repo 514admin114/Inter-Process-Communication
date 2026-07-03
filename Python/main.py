@@ -40,14 +40,14 @@ def load_config(path="../config.json"):
 def print_summary(metrics_list):
     """打印测试总结"""
     print("\n\n========================================")
-    print("         测试总结报告")
+    print("         Test Summary Report")
     print("========================================")
     
     if not metrics_list:
-        print("没有可用的测试数据")
+        print("No available test data")
         return
     
-    # 按IPC类型分组统计
+    # Group statistics by IPC type
     type_stats = {}
     for m in metrics_list:
         if m.ipc_type not in type_stats:
@@ -55,7 +55,7 @@ def print_summary(metrics_list):
         type_stats[m.ipc_type].append(m)
     
     for ipc_type, type_metrics in type_stats.items():
-        print(f"\n【{ipc_type}】性能统计:")
+        print(f"\n[{ipc_type}] Performance Statistics:")
         
         total_throughput = 0
         total_avg_latency = 0
@@ -66,11 +66,11 @@ def print_summary(metrics_list):
             total_avg_latency += m.avg_latency
         
         if count > 0:
-            print(f"  平均吞吐量: {total_throughput / count:.2f} 消息/秒")
-            print(f"  平均延迟: {total_avg_latency / count:.2f} 微秒")
-            print(f"  测试次数: {count}")
+            print(f"  Average Throughput: {total_throughput / count:.2f} messages/sec")
+            print(f"  Average Latency: {total_avg_latency / count:.2f} microseconds")
+            print(f"  Test Count: {count}")
     
-    # 找出最佳性能
+    # Find best performance
     best_throughput = None
     lowest_latency = None
     
@@ -80,22 +80,22 @@ def print_summary(metrics_list):
         if lowest_latency is None or m.avg_latency < lowest_latency.avg_latency:
             lowest_latency = m
     
-    print("\n【最佳性能】")
+    print("\n[Best Performance]")
     if best_throughput:
-        print(f"  最高吞吐量: {best_throughput.throughput:.2f} 消息/秒 ({best_throughput.ipc_type}, {best_throughput.pattern}, {best_throughput.message_size}字节)")
+        print(f"  Highest Throughput: {best_throughput.throughput:.2f} messages/sec ({best_throughput.ipc_type}, {best_throughput.pattern}, {best_throughput.message_size} bytes)")
     if lowest_latency:
-        print(f"  最低延迟: {lowest_latency.avg_latency:.2f} 微秒 ({lowest_latency.ipc_type}, {lowest_latency.pattern}, {lowest_latency.message_size}字节)")
+        print(f"  Lowest Latency: {lowest_latency.avg_latency:.2f} microseconds ({lowest_latency.ipc_type}, {lowest_latency.pattern}, {lowest_latency.message_size} bytes)")
 
 
 def main():
     print("========================================")
-    print("  进程间通信(IPC)性能测试程序")
+    print("  Inter-Process Communication (IPC) Performance Testing Program")
     print("========================================")
-    print(f"开始时间: {get_current_timestamp()}\n")
+    print(f"Start Time: {get_current_timestamp()}\n")
     
     # 确保数据目录存在
     if not ensure_data_dir():
-        print("创建数据目录失败")
+        print("Failed to create data directory")
         return
     
     # Remove old CSV file for clean overwrite
@@ -106,11 +106,11 @@ def main():
     # 从共享配置文件加载测试参数
     config = load_config("../config.json")
     
-    print("测试配置:")
-    print(f"- 消息大小: {config.message_sizes} 字节")
-    print(f"- 生产者数量: {config.producer_counts}")
-    print(f"- 消费者数量: {config.consumer_counts}")
-    print(f"- 每个生产者消息数: {config.messages_per_prod}\n")
+    print("Test Configuration:")
+    print(f"- Message Sizes: {config.message_sizes} bytes")
+    print(f"- Producer Counts: {config.producer_counts}")
+    print(f"- Consumer Counts: {config.consumer_counts}")
+    print(f"- Messages per Producer: {config.messages_per_prod}\n")
     
     all_metrics = []
     test_count = 0
@@ -124,7 +124,7 @@ def main():
     
     # 遍历所有测试组合
     for msg_size in config.message_sizes:
-        print(f"\n########## 消息大小: {msg_size} 字节 ##########")
+        print(f"\n########## Message Size: {msg_size} bytes ##########")
         
         for producers in config.producer_counts:
             for consumers in config.consumer_counts:
@@ -132,10 +132,10 @@ def main():
                 if producers * consumers > 32:
                     continue
                 
-                print(f"\n--- 测试模式: {producers}生产者 -> {consumers}消费者 ---")
+                print(f"\n--- Test Pattern: {producers} Producers -> {consumers} Consumers ---")
                 
                 # 测试1: 共享内存
-                print("\n[1/3] 测试共享内存IPC...")
+                print("\n[1/3] Testing Shared Memory IPC...")
                 test_count += 1
                 print(f"[{test_count}/{total_tests}] ", end="")
                 
@@ -148,7 +148,7 @@ def main():
                     save_to_csv(metrics, "ipc_performance_python.csv")
                 except Exception as e:
                     failed_count += 1
-                    print(f"共享内存测试失败: {e}")
+                    print(f"Shared Memory test failed: {e}")
                     # 保存失败的测试记录
                     failed_metrics = PerformanceMetrics()
                     failed_metrics.ipc_type = "shared_memory"
@@ -165,7 +165,7 @@ def main():
                 time.sleep(0.2)
                 
                 # 测试2: Socket IPC
-                print("[2/3] 测试Socket IPC...")
+                print("[2/3] Testing Socket IPC...")
                 test_count += 1
                 print(f"[{test_count}/{total_tests}] ", end="")
                 
@@ -178,7 +178,7 @@ def main():
                     save_to_csv(metrics, "ipc_performance_python.csv")
                 except Exception as e:
                     failed_count += 1
-                    print(f"Socket IPC测试失败: {e}")
+                    print(f"Socket IPC test failed: {e}")
                     # 保存失败的测试记录
                     failed_metrics = PerformanceMetrics()
                     failed_metrics.ipc_type = "socket"
@@ -195,7 +195,7 @@ def main():
                 time.sleep(0.2)
                 
                 # 测试3: TCP Socket
-                print("[3/3] 测试TCP Socket...")
+                print("[3/3] Testing TCP Socket...")
                 test_count += 1
                 print(f"[{test_count}/{total_tests}] ", end="")
                 
@@ -208,7 +208,7 @@ def main():
                     save_to_csv(metrics, "ipc_performance_python.csv")
                 except Exception as e:
                     failed_count += 1
-                    print(f"TCP Socket测试失败: {e}")
+                    print(f"TCP Socket test failed: {e}")
                     # 保存失败的测试记录
                     failed_metrics = PerformanceMetrics()
                     failed_metrics.ipc_type = "tcp"
@@ -235,10 +235,10 @@ def main():
     print_summary(all_metrics)
     
     print("\n========================================")
-    print(f"测试完成! 结束时间: {get_current_timestamp()}")
-    print(f"总测试数: {actual_total_tests} | 成功: {success_count} | 失败: {failed_count} | 成功率: {success_count / actual_total_tests * 100 if actual_total_tests > 0 else 0:.2f}%")
-    print(f"总程序耗时: {total_program_time:.2f} 秒")
-    print("数据已保存到: ../csv/ipc_performance_python.csv")
+    print(f"Testing Complete! End Time: {get_current_timestamp()}")
+    print(f"Total Tests: {actual_total_tests} | Successful: {success_count} | Failed: {failed_count} | Success Rate: {success_count / actual_total_tests * 100 if actual_total_tests > 0 else 0:.2f}%")
+    print(f"Total Program Time: {total_program_time:.2f} seconds")
+    print("Data saved to: ../csv/ipc_performance_python.csv")
     print("========================================")
 
 

@@ -35,7 +35,7 @@ public class MetricsUtils {
             }
             return true;
         } catch (IOException e) {
-            System.err.println("创建数据目录失败: " + e.getMessage());
+            System.err.println("Failed to create data directory: " + e.getMessage());
             return false;
         }
     }
@@ -109,7 +109,7 @@ public class MetricsUtils {
             
             return true;
         } catch (IOException e) {
-            System.err.println("写入CSV文件失败: " + e.getMessage());
+            System.err.println("Failed to write CSV file: " + e.getMessage());
             return false;
         }
     }
@@ -142,7 +142,7 @@ public class MetricsUtils {
             
             return true;
         } catch (IOException e) {
-            System.err.println("写入统计信息失败: " + e.getMessage());
+            System.err.println("Failed to write statistics: " + e.getMessage());
             return false;
         }
     }

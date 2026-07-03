@@ -23,7 +23,7 @@ class SocketIPC:
         server_socket.listen(100)
         self.port = server_socket.getsockname()[1]
         self.address = f"127.0.0.1:{self.port}"
-        print(f"服务器监听地址: {self.address}")
+        print(f"Server listening address: {self.address}")
         return server_socket
 
 
@@ -48,7 +48,7 @@ def producer(id, address, port, message_count, message_size, latencies, latencie
             time.sleep((retry + 1) * 0.01)
     
     if conn is None:
-        print(f"Producer {id} 无法建立连接")
+        print(f"Producer {id} connection failed")
         return
     
     try:
@@ -107,7 +107,7 @@ def producer(id, address, port, message_count, message_size, latencies, latencie
             with latencies_lock:
                 latencies.append(elapsed)
     except Exception as e:
-        print(f"Producer {id} 发送失败: {e}")
+        print(f"Producer {id} send failed: {e}")
     finally:
         conn.close()
 
@@ -161,8 +161,8 @@ def handle_connection(conn, message_size, received_count, received_lock,
 
 def run_test(producers, consumers, messages_per_producer, message_size):
     """运行Socket IPC测试"""
-    print("\n=== Socket IPC测试 ===")
-    print(f"生产者: {producers}, 消费者: {consumers}, 每个生产者消息数: {messages_per_producer}, 消息大小: {message_size}字节")
+    print("\n=== Socket IPC Test ===")
+    print(f"Producers: {producers}, Consumers: {consumers}, Messages per Producer: {messages_per_producer}, Message Size: {message_size} bytes")
     
     socket_ipc = SocketIPC(message_size)
     total_messages = producers * messages_per_producer
@@ -195,7 +195,7 @@ def run_test(producers, consumers, messages_per_producer, message_size):
                                          error_count, error_lock, messages_per_producer))
                 t.start()
             except Exception as e:
-                print(f"Accept错误 (已接受 {i}/{producers} 个连接): {e}")
+                print(f"Accept error (accepted {i}/{producers} connections): {e}")
                 break
         
         accept_done.set()
@@ -262,13 +262,13 @@ def run_test(producers, consumers, messages_per_producer, message_size):
     metrics.timestamp = get_current_timestamp()
     metrics.success = True
     
-    print(f"总耗时: {total_time:.6f}秒")
-    print(f"吞吐量: {throughput:.2f} 消息/秒")
-    print(f"平均延迟: {avg_latency:.2f} 微秒")
-    print(f"P95延迟: {p95_latency:.2f} 微秒")
-    print(f"P99延迟: {p99_latency:.2f} 微秒")
-    print(f"错误数: {metrics.error_count}, 重传数: {metrics.retransmit_count}")
+    print(f"Total Time: {total_time:.6f} seconds")
+    print(f"Throughput: {throughput:.2f} messages/sec")
+    print(f"Average Latency: {avg_latency:.2f} microseconds")
+    print(f"P95 Latency: {p95_latency:.2f} microseconds")
+    print(f"P99 Latency: {p99_latency:.2f} microseconds")
+    print(f"Error Count: {metrics.error_count}, Retransmit Count: {metrics.retransmit_count}")
     error_rate = (metrics.error_count * 100.0 / total_messages) if total_messages > 0 else 0.0
-    print(f"数据错误率: {error_rate:.2f}%\n")
+    print(f"Error Rate: {error_rate:.2f}%\n")
     
     return metrics

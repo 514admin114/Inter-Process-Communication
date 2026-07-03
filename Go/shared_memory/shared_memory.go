@@ -139,7 +139,7 @@ func Producer(id int, sm *SharedMemory, messageCount int, messageSize int,
 		}
 
 		if err := sm.Write(msgData); err != nil {
-			fmt.Printf("Producer %d 写入失败: %v\n", id, err)
+			fmt.Printf("Producer %d write failed: %v\n", id, err)
 			continue
 		}
 
@@ -160,7 +160,7 @@ func Consumer(id int, sm *SharedMemory, messageCount int, messageSize int,
 	for i := 0; i < messageCount; i++ {
 		msgData, err := sm.Read()
 		if err != nil {
-			fmt.Printf("Consumer %d 读取失败: %v\n", id, err)
+			fmt.Printf("Consumer %d read failed: %v\n", id, err)
 			continue
 		}
 
@@ -177,8 +177,8 @@ func Consumer(id int, sm *SharedMemory, messageCount int, messageSize int,
 
 // RunTest 运行共享内存IPC测试
 func RunTest(producers, consumers, messagesPerProducer, messageSize int) (*utils.PerformanceMetrics, error) {
-	fmt.Printf("\n=== 共享内存测试 ===\n")
-	fmt.Printf("生产者: %d, 消费者: %d, 每个生产者消息数: %d, 消息大小: %d字节\n",
+	fmt.Printf("\n=== Shared Memory Test ===\n")
+	fmt.Printf("Producers: %d, Consumers: %d, Messages per Producer: %d, Message Size: %d bytes\n",
 		producers, consumers, messagesPerProducer, messageSize)
 
 	sm := NewSharedMemory(messageSize)
@@ -246,13 +246,13 @@ func RunTest(producers, consumers, messagesPerProducer, messageSize int) (*utils
 		Timestamp:       time.Now().Format("2006-01-02 15:04:05"),
 	}
 
-	fmt.Printf("总耗时: %.6f秒\n", totalTime)
-	fmt.Printf("吞吐量: %.2f 消息/秒\n", throughput)
-	fmt.Printf("平均延迟: %.2f 微秒\n", avgLatency)
-	fmt.Printf("P95延迟: %.2f 微秒\n", p95Latency)
-	fmt.Printf("P99延迟: %.2f 微秒\n", p99Latency)
-	fmt.Printf("错误数: %d, 重传数: %d\n", metrics.ErrorCount, metrics.RetransmitCount)
-	fmt.Printf("数据错误率: %.2f%%\n\n", float64(metrics.ErrorCount)*100.0/float64(totalMessages))
+	fmt.Printf("Total Time: %.6f seconds\n", totalTime)
+	fmt.Printf("Throughput: %.2f messages/sec\n", throughput)
+	fmt.Printf("Average Latency: %.2f microseconds\n", avgLatency)
+	fmt.Printf("P95 Latency: %.2f microseconds\n", p95Latency)
+	fmt.Printf("P99 Latency: %.2f microseconds\n", p99Latency)
+	fmt.Printf("Error Count: %d, Retransmit Count: %d\n", metrics.ErrorCount, metrics.RetransmitCount)
+	fmt.Printf("Error Rate: %.2f%%\n\n", float64(metrics.ErrorCount)*100.0/float64(totalMessages))
 
 	return metrics, nil
 }

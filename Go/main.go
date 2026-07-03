@@ -42,13 +42,13 @@ func loadConfig(path string) TestConfig {
 
 func main() {
 	fmt.Println("========================================")
-	fmt.Println("  进程间通信(IPC)性能测试程序")
+	fmt.Println("  Inter-Process Communication (IPC) Performance Testing Program")
 	fmt.Println("========================================")
-	fmt.Printf("开始时间: %s\n\n", time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Printf("Start Time: %s\n\n", time.Now().Format("2006-01-02 15:04:05"))
 
 	// 确保数据目录存在
 	if err := utils.EnsureDataDir(); err != nil {
-		fmt.Printf("创建数据目录失败: %v\n", err)
+		fmt.Printf("Failed to create data directory: %v\n", err)
 		return
 	}
 
@@ -58,11 +58,11 @@ func main() {
 	// 从共享配置文件加载测试参数
 	config := loadConfig("../config.json")
 
-	fmt.Println("测试配置:")
-	fmt.Printf("- 消息大小: %v 字节\n", config.MessageSizes)
-	fmt.Printf("- 生产者数量: %v\n", config.ProducerCounts)
-	fmt.Printf("- 消费者数量: %v\n", config.ConsumerCounts)
-	fmt.Printf("- 每个生产者消息数: %d\n\n", config.MessagesPerProd)
+	fmt.Println("Test Configuration:")
+	fmt.Printf("- Message Sizes: %v bytes\n", config.MessageSizes)
+	fmt.Printf("- Producer Counts: %v\n", config.ProducerCounts)
+	fmt.Printf("- Consumer Counts: %v\n", config.ConsumerCounts)
+	fmt.Printf("- Messages per Producer: %d\n\n", config.MessagesPerProd)
 
 	var allMetrics []*utils.PerformanceMetrics
 	testCount := 0
@@ -73,7 +73,7 @@ func main() {
 	var failedCount int
 	
 	for _, msgSize := range config.MessageSizes {
-		fmt.Printf("\n########## 消息大小: %d 字节 ##########\n", msgSize)
+		fmt.Printf("\n########## Message Size: %d bytes ##########\n", msgSize)
 
 		for _, producers := range config.ProducerCounts {
 			for _, consumers := range config.ConsumerCounts {
@@ -82,10 +82,10 @@ func main() {
 					continue
 				}
 
-				fmt.Printf("\n--- 测试模式: %d生产者 -> %d消费者 ---\n", producers, consumers)
+				fmt.Printf("\n--- Test Pattern: %d Producers -> %d Consumers ---\n", producers, consumers)
 
 				// 测试1: 共享内存
-				fmt.Println("\n[1/3] 测试共享内存IPC...")
+				fmt.Println("\n[1/3] Testing Shared Memory IPC...")
 				testCount++
 				fmt.Printf("[%d/%d] ", testCount, totalTests)
 				if metrics, err := shared_memory.RunTest(producers, consumers, config.MessagesPerProd, msgSize); err == nil {
@@ -93,11 +93,11 @@ func main() {
 					successCount++
 					allMetrics = append(allMetrics, metrics)
 					if err := utils.SaveToCSV(metrics, "ipc_performance_go.csv"); err != nil {
-						fmt.Printf("保存数据失败: %v\n", err)
+						fmt.Printf("Failed to save data: %v\n", err)
 					}
 				} else {
 					failedCount++
-					fmt.Printf("共享内存测试失败: %v\n", err)
+					fmt.Printf("Shared Memory test failed: %v\n", err)
 					// 保存失败的测试记录
 					failedMetrics := &utils.PerformanceMetrics{
 						IPCType:       "shared_memory",
@@ -116,7 +116,7 @@ func main() {
 				time.Sleep(200 * time.Millisecond)
 
 				// 测试2: Socket IPC (Unix Socket / Named Pipe)
-				fmt.Println("[2/3] 测试Socket IPC...")
+				fmt.Println("[2/3] Testing Socket IPC...")
 				testCount++
 				fmt.Printf("[%d/%d] ", testCount, totalTests)
 				if metrics, err := socket.RunTest(producers, consumers, config.MessagesPerProd, msgSize); err == nil {
@@ -124,11 +124,11 @@ func main() {
 					successCount++
 					allMetrics = append(allMetrics, metrics)
 					if err := utils.SaveToCSV(metrics, "ipc_performance_go.csv"); err != nil {
-						fmt.Printf("保存数据失败: %v\n", err)
+						fmt.Printf("Failed to save data: %v\n", err)
 					}
 				} else {
 					failedCount++
-					fmt.Printf("Socket IPC测试失败: %v\n", err)
+					fmt.Printf("Socket IPC test failed: %v\n", err)
 					// 保存失败的测试记录
 					failedMetrics := &utils.PerformanceMetrics{
 						IPCType:       "socket",
@@ -147,7 +147,7 @@ func main() {
 				time.Sleep(200 * time.Millisecond)
 
 				// 测试3: TCP Socket
-				fmt.Println("[3/3] 测试TCP Socket...")
+				fmt.Println("[3/3] Testing TCP Socket...")
 				testCount++
 				fmt.Printf("[%d/%d] ", testCount, totalTests)
 				if metrics, err := tcp_ipc.RunTest(producers, consumers, config.MessagesPerProd, msgSize); err == nil {
@@ -155,11 +155,11 @@ func main() {
 					successCount++
 					allMetrics = append(allMetrics, metrics)
 					if err := utils.SaveToCSV(metrics, "ipc_performance_go.csv"); err != nil {
-						fmt.Printf("保存数据失败: %v\n", err)
+						fmt.Printf("Failed to save data: %v\n", err)
 					}
 				} else {
 					failedCount++
-					fmt.Printf("TCP Socket测试失败: %v\n", err)
+					fmt.Printf("TCP Socket test failed: %v\n", err)
 					// 保存失败的测试记录
 					failedMetrics := &utils.PerformanceMetrics{
 						IPCType:       "tcp",
@@ -183,39 +183,39 @@ func main() {
 	// 在CSV文件末尾添加统计信息
 	actualTotalTests := successCount + failedCount
 	if err := utils.AppendStatistics("ipc_performance_go.csv", actualTotalTests, successCount, failedCount); err != nil {
-		fmt.Printf("保存统计信息失败: %v\n", err)
+		fmt.Printf("Failed to save statistics: %v\n", err)
 	}
 
 	// 打印总结
 	printSummary(allMetrics)
 
 	fmt.Printf("\n========================================\n")
-	fmt.Printf("测试完成! 结束时间: %s\n", time.Now().Format("2006-01-02 15:04:05"))
-	fmt.Printf("总测试数: %d | 成功: %d | 失败: %d | 成功率: %.2f%%\n", 
+	fmt.Printf("Testing Complete! End Time: %s\n", time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Printf("Total Tests: %d | Successful: %d | Failed: %d | Success Rate: %.2f%%\n",
 		actualTotalTests, successCount, failedCount, float64(successCount)/float64(actualTotalTests)*100)
-	fmt.Printf("数据已保存到: ../csv/ipc_performance_go.csv\n")
+	fmt.Printf("Data saved to: ../csv/ipc_performance_go.csv\n")
 	fmt.Println("========================================")
 }
 
 // printSummary 打印测试总结
 func printSummary(metrics []*utils.PerformanceMetrics) {
 	fmt.Println("\n\n========================================")
-	fmt.Println("         测试总结报告")
+	fmt.Println("         Test Summary Report")
 	fmt.Println("========================================")
 
 	if len(metrics) == 0 {
-		fmt.Println("没有可用的测试数据")
+		fmt.Println("No available test data")
 		return
 	}
 
-	// 按IPC类型分组统计
+	// Group statistics by IPC type
 	typeStats := make(map[string][]*utils.PerformanceMetrics)
 	for _, m := range metrics {
 		typeStats[m.IPCType] = append(typeStats[m.IPCType], m)
 	}
 
 	for ipcType, typeMetrics := range typeStats {
-		fmt.Printf("\n【%s】性能统计:\n", ipcType)
+		fmt.Printf("\n[%s] Performance Statistics:\n", ipcType)
 		
 		var totalThroughput float64
 		var totalAvgLatency float64
@@ -227,13 +227,13 @@ func printSummary(metrics []*utils.PerformanceMetrics) {
 		}
 
 		if count > 0 {
-			fmt.Printf("  平均吞吐量: %.2f 消息/秒\n", totalThroughput/float64(count))
-			fmt.Printf("  平均延迟: %.2f 微秒\n", totalAvgLatency/float64(count))
-			fmt.Printf("  测试次数: %d\n", count)
+			fmt.Printf("  Average Throughput: %.2f messages/sec\n", totalThroughput/float64(count))
+			fmt.Printf("  Average Latency: %.2f microseconds\n", totalAvgLatency/float64(count))
+			fmt.Printf("  Test Count: %d\n", count)
 		}
 	}
 
-	// 找出最佳性能
+	// Find best performance
 	var bestThroughput *utils.PerformanceMetrics
 	var lowestLatency *utils.PerformanceMetrics
 
@@ -246,14 +246,14 @@ func printSummary(metrics []*utils.PerformanceMetrics) {
 		}
 	}
 
-	fmt.Println("\n【最佳性能】")
+	fmt.Println("\n[Best Performance]")
 	if bestThroughput != nil {
-		fmt.Printf("  最高吞吐量: %.2f 消息/秒 (%s, %s, %d字节)\n",
+		fmt.Printf("  Highest Throughput: %.2f messages/sec (%s, %s, %d bytes)\n",
 			bestThroughput.Throughput, bestThroughput.IPCType, 
 			bestThroughput.Pattern, bestThroughput.MessageSize)
 	}
 	if lowestLatency != nil {
-		fmt.Printf("  最低延迟: %.2f 微秒 (%s, %s, %d字节)\n",
+		fmt.Printf("  Lowest Latency: %.2f microseconds (%s, %s, %d bytes)\n",
 			lowestLatency.AvgLatency, lowestLatency.IPCType,
 			lowestLatency.Pattern, lowestLatency.MessageSize)
 	}
