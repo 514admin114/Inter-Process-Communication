@@ -32,7 +32,8 @@
 Inter-Process-Communication/
 ├── 📖 核心文档
 │   ├── README.md                    # 项目总览(本文件)
-│   └── README_IPC_Analysis.md       # IPC分析器完整文档
+│   ├── README_IPC_Analysis.md       # IPC分析器完整文档
+│   └── config.json                  # 四种语言共享的测试配置文件
 │
 ├── 📊 数据分析器
 │   ├── ipc_analyzer.py              # Streamlit分析器主程序
@@ -131,14 +132,20 @@ python main.py
 
 ## 📊 数据分析器
 
-完成性能测试后，可以使用内置的 Streamlit 数据分析器对结果进行可视化分析。
+项目提供了 Web 界面的统一启动器，集成三大功能：
 
-### 安装依赖
+### 启动统一管理界面
+
 ```bash
-pip install -r requirements.txt
+streamlit run ipc_analysis_start.py
 ```
 
-### 启动分析器
+提供三个页签：
+- **参数配置**：编辑共享的 `config.json`，四种语言统一读取
+- **启动测试**：分别编译并运行 C++ / Go / Java / Python 的 benchmark
+- **数据分析**：检查 Python 环境依赖，一键启动 `ipc_analyzer.py`
+
+### 单独启动分析器
 
 ```bash
 streamlit run ipc_analyzer.py
@@ -156,7 +163,12 @@ streamlit run ipc_analyzer.py
 
 ## 📊 测试配置
 
-### 默认配置（简化版）
+四种语言共享项目根目录的 `config.json` 文件，确保公平对比。可通过以下方式修改配置：
+
+- **Web UI**（推荐）：运行 `streamlit run ipc_analysis_start.py`，在「参数配置」页签中编辑并保存
+- **手动编辑**：直接修改项目根目录的 `config.json`
+
+### 默认配置
 
 - **消息大小**: 64字节, 1024字节
 - **生产者数量**: 1, 2, 4
@@ -164,17 +176,6 @@ streamlit run ipc_analyzer.py
 - **每个生产者消息数**: 500
 - **总测试数**: 约54个测试
 - **预计时间**: 5-10分钟
-
-### 完整配置
-
-如需完整测试，在各语言的main文件中修改配置：
-
-- **消息大小**: 64, 256, 1024, 4096字节
-- **生产者数量**: 1, 2, 4, 8
-- **消费者数量**: 1, 2, 4, 8
-- **每个生产者消息数**: 1000
-- **总测试数**: 约192个测试
-- **预计时间**: 20-40分钟
 
 ## 🔐 数据校验与重传协议
 
@@ -202,39 +203,16 @@ streamlit run ipc_analyzer.py
 
 测试结果保存到CSV文件：
 
-- Go: `csv/data/ipc_performance_go.csv`
-- C++: `csv/data/ipc_performance_cpp.csv`
-- Java: `csv/data/ipc_performance_java.csv`
-- Python: `csv/data/ipc_performance_python.csv`
+- Go: `csv/ipc_performance_go.csv`
+- C++: `csv/ipc_performance_cpp.csv`
+- Java: `csv/ipc_performance_java.csv`
+- Python: `csv/ipc_performance_python.csv`
 
 ### CSV格式
 
 ```csv
 Timestamp,IPC_Type,Pattern,Producer_Count,Consumer_Count,Message_Count,Message_Size,Total_Time_Seconds,Throughput_Msg_Per_Sec,Avg_Latency_Microseconds,P95_Latency_Microseconds,P99_Latency_Microseconds,Error_Count,Retransmit_Count,Success
 ```
-
-## 📊 性能数据可视化分析
-
-完成测试后,可以使用Streamlit分析器对结果进行可视化分析:
-
-```bash
-# 安装依赖
-pip install streamlit pandas plotly numpy
-
-# 启动分析器
-streamlit run ipc_analyzer.py
-```
-
-详细使用说明请查看:
-- 📖 [IPC分析器完整文档](README_IPC_Analysis.md)
-
-分析器功能:
-- 📊 **横向对比**: 同语言不同IPC方式性能比较
-- 📉 **纵向对比**: 跨语言相同IPC方式性能比较
-- 🎯 **综合排名**: TOP 10性能和最佳实践推荐
-- 📋 **数据导出**: 灵活的筛选和CSV导出
-
----
 
 ## 🔍 预期性能对比
 

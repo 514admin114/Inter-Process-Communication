@@ -62,15 +62,16 @@ g++ main.cpp -o main.exe -lws2_32
 - **总测试数**: 约54个测试
 - **预计时间**: 5-10分钟
 
-### 完整配置
-修改 `main.cpp` 中的配置:
-```cpp
-config.messageSizes = {64, 256, 1024, 4096};  // 4种大小
-config.producerCounts = {1, 2, 4, 8};         // 4种数量
-config.consumerCounts = {1, 2, 4, 8};         // 4种数量
-config.messagesPerProd = 1000;                 // 1000条消息
-// 总计:约192个测试,20-40分钟
+### 调整配置
+
+修改项目根目录下的 `config.json`（四种语言共享），或通过 Web UI 编辑：
+
+```bash
+# 启动 Web 管理界面，在「参数配置」页签中编辑
+streamlit run ipc_analysis_start.py
 ```
+
+配置文件路径: `../config.json`
 
 ---
 

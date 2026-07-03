@@ -74,15 +74,16 @@ Python版本使用标准库,**无需安装额外的依赖包**。
 - **总测试数**: 约54个测试
 - **预计时间**: 5-10分钟
 
-### 完整配置
-修改 `main.py` 中的配置部分:
-```python
-config.message_sizes = [64, 256, 1024, 4096]     # 4种大小
-config.producer_counts = [1, 2, 4, 8]            # 4种数量
-config.consumer_counts = [1, 2, 4, 8]            # 4种数量
-config.messages_per_prod = 1000                   # 1000条消息
-# 总计:约192个测试,20-40分钟
+### 调整配置
+
+修改项目根目录下的 `config.json`（四种语言共享），或通过 Web UI 编辑：
+
+```bash
+# 启动 Web 管理界面，在「参数配置」页签中编辑
+streamlit run ipc_analysis_start.py
 ```
+
+配置文件路径: `../config.json`
 
 ---
 

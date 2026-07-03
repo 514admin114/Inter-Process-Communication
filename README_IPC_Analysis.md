@@ -90,12 +90,13 @@ streamlit run ipc_analyzer.py
 
 如果还没有数据,请先在各语言目录下运行测试程序。
 
-### 2. 启动分析器
+### 2. 启动管理界面
 
-运行启动器脚本获取教程:
+运行统一管理界面（推荐），可在同一页面完成配置、运行测试、启动分析：
 ```bash
 streamlit run ipc_analysis_start.py
 ```
+
 或直接运行分析器：
 ```bash
 streamlit run ipc_analyzer.py
@@ -203,8 +204,9 @@ Inter-Process-Communication/
 │   ├── ipc_performance_cpp.csv
 │   ├── ipc_performance_java.csv
 │   └── ipc_performance_python.csv
+├── config.json                   # 四种语言共享的测试配置文件
 ├── ipc_analyzer.py               # Streamlit分析器主程序
-├── ipc_analysis_start.py         # 启动器脚本
+├── ipc_analysis_start.py         # 统一管理界面 (参数配置/启动测试/数据分析)
 ├── requirements.txt              # Python依赖列表
 ├── README_IPC_Analysis.md        # 本文档
 ├── Go/                           # Go语言测试程序
