@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"ipc/shared_memory"
@@ -29,6 +30,9 @@ func main() {
 		fmt.Printf("创建数据目录失败: %v\n", err)
 		return
 	}
+
+	// Remove old CSV file for clean overwrite
+	os.Remove("../csv/ipc_performance_go.csv")
 
 	// 测试配置 - 简化版用于快速测试
 	config := TestConfig{

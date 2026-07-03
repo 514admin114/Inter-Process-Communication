@@ -1,4 +1,5 @@
 import sys
+import os
 import time
 from shared_memory.shared_memory import run_test as shared_memory_test
 from socket_ipc.socket_ipc import run_test as socket_test
@@ -76,6 +77,11 @@ def main():
     if not ensure_data_dir():
         print("创建数据目录失败")
         return
+    
+    # Remove old CSV file for clean overwrite
+    csv_path = os.path.join("..", "csv", "ipc_performance_python.csv")
+    if os.path.exists(csv_path):
+        os.remove(csv_path)
     
     # 测试配置 - 简化版用于快速测试
     config = TestConfig()

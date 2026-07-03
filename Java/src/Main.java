@@ -4,6 +4,7 @@ import ipc.tcp_ipc.TcpIPC;
 import ipc.utils.PerformanceMetrics;
 import ipc.utils.MetricsUtils;
 
+import java.io.File;
 import java.util.*;
 
 public class Main {
@@ -33,6 +34,9 @@ public class Main {
             System.err.println("创建数据目录失败");
             return;
         }
+        
+        // Remove old CSV file for clean overwrite
+        new File("../csv/ipc_performance_java.csv").delete();
         
         // 测试配置 - 简化版用于快速测试
         TestConfig config = new TestConfig();

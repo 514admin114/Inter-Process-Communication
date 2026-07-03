@@ -165,7 +165,7 @@ public:
             t.join();
         }
         
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
         
         stopFlag.store(true);
         cv.notify_all();

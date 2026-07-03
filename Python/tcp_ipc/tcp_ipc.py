@@ -69,6 +69,11 @@ def producer(id, address, port, message_count, message_size, latencies, latencie
                 corrupt_pos = random.randint(0, message_size - 1)
                 send_data[corrupt_pos] ^= 0xFF
             
+            # Pre-allocate merged wire buffer: [4B header][data][4B checksum]
+            wire_buf = bytearray(4 + message_size + 4)
+            wire_buf[0:4] = header_bytes
+            wire_buf[4 + message_size:] = checksum_bytes
+            
             # Retransmission loop
             delivered = False
             retransmits = 0
@@ -78,12 +83,9 @@ def producer(id, address, port, message_count, message_size, latencies, latencie
                     send_data = bytearray(data)
                     retransmits += 1
                 
-                # Send header
-                conn.sendall(header_bytes)
-                # Send data
-                conn.sendall(bytes(send_data))
-                # Send checksum
-                conn.sendall(checksum_bytes)
+                # Copy data into merged buffer and send everything at once
+                wire_buf[4:4 + message_size] = send_data
+                conn.sendall(wire_buf)
                 
                 # Receive ACK/NACK (1 byte)
                 try:
@@ -203,7 +205,7 @@ def run_test(producers, consumers, messages_per_producer, message_size):
     
     # 等待服务器准备好
     server_ready.wait()
-    time.sleep(0.3)
+    time.sleep(0.05)
     
     # 启动生产者
     producer_threads = []
@@ -222,7 +224,7 @@ def run_test(producers, consumers, messages_per_producer, message_size):
         t.join()
     
     # 给最后的消息一些时间被Accept
-    time.sleep(0.5)
+    time.sleep(0.1)
     
     # 关闭listener
     listener.close()

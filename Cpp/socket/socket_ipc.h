@@ -247,6 +247,12 @@ public:
                 injected = true;
             }
             
+            // Pre-allocate merged wire buffer: [4B header][data][4B checksum]
+            std::vector<char> wireBuf(4 + messageSize + 4);
+            // Pre-fill header and checksum (unchanged across retransmissions)
+            std::memcpy(wireBuf.data(), &netHeader, 4);
+            std::memcpy(wireBuf.data() + 4 + messageSize, &netChecksum, 4);
+            
             // Retransmission loop
             bool delivered = false;
             int retransmits = 0;
@@ -257,16 +263,9 @@ public:
                     retransmits++;
                 }
                 
-                // Send header
-                if (!sendAll(conn, reinterpret_cast<const char*>(&netHeader), 4)) {
-                    break;
-                }
-                // Send data
-                if (!sendAll(conn, sendData.data(), messageSize)) {
-                    break;
-                }
-                // Send checksum (of original data, so consumer can detect corruption)
-                if (!sendAll(conn, reinterpret_cast<const char*>(&netChecksum), 4)) {
+                // Copy data into merged buffer and send everything once
+                std::memcpy(wireBuf.data() + 4, sendData.data(), messageSize);
+                if (!sendAll(conn, wireBuf.data(), static_cast<int>(wireBuf.size()))) {
                     break;
                 }
                 
@@ -422,7 +421,7 @@ public:
         });
         
         // Wait for server to be ready
-        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
         
         // Start producers
         for (int i = 0; i < producers; i++) {
@@ -438,7 +437,7 @@ public:
         }
         
         // Give time for last messages to be accepted
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         
         // Close server socket to stop accepting
 #ifdef _WIN32

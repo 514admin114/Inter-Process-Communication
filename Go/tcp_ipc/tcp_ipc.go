@@ -101,13 +101,7 @@ func Producer(id int, address string, messageCount int, messageSize int,
 
 		// Compute checksum on original data
 		checksum := utils.ComputeChecksum(data)
-		checksumBuf := make([]byte, 4)
-		binary.BigEndian.PutUint32(checksumBuf, checksum)
-
-		// Wire format: [4B header = messageSize+4] [data] [4B checksum]
 		totalPayload := uint32(messageSize + 4)
-		headerBuf := make([]byte, 4)
-		binary.BigEndian.PutUint32(headerBuf, totalPayload)
 
 		// Error injection: corrupt 1 byte in data with ErrorRate probability
 		sendData := make([]byte, messageSize)
@@ -116,6 +110,12 @@ func Producer(id int, address string, messageCount int, messageSize int,
 			corruptPos := rng.Intn(messageSize)
 			sendData[corruptPos] ^= 0xFF
 		}
+
+		// Pre-allocate merged wire buffer: [4B header][data][4B checksum]
+		wireBuf := make([]byte, 4+messageSize+4)
+		// Pre-fill header and checksum (unchanged across retransmissions)
+		binary.BigEndian.PutUint32(wireBuf[0:4], totalPayload)
+		binary.BigEndian.PutUint32(wireBuf[4+messageSize:], checksum)
 
 		// Retransmission loop
 		delivered := false
@@ -127,16 +127,9 @@ func Producer(id int, address string, messageCount int, messageSize int,
 				retransmits++
 			}
 
-			// Send header
-			if err := sendAll(conn, headerBuf); err != nil {
-				break
-			}
-			// Send data
-			if err := sendAll(conn, sendData); err != nil {
-				break
-			}
-			// Send checksum
-			if err := sendAll(conn, checksumBuf); err != nil {
+			// Copy data into merged buffer and send everything once
+			copy(wireBuf[4:4+messageSize], sendData)
+			if err := sendAll(conn, wireBuf); err != nil {
 				break
 			}
 
@@ -252,7 +245,7 @@ func RunTest(producers, consumers, messagesPerProducer, messageSize int) (*utils
 	// 等待服务器准备好
 	<-serverReady
 	// 额外等待确保完全就绪
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 
 	// 启动生产者
 	for i := 0; i < producers; i++ {
@@ -265,7 +258,7 @@ func RunTest(producers, consumers, messagesPerProducer, messageSize int) (*utils
 	producerWg.Wait()
 
 	// 给最后的消息一些时间被Accept
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	// 关闭listener，停止接受新连接
 	listener.Close()

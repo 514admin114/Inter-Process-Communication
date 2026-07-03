@@ -252,6 +252,12 @@ public:
                 sendData[corruptPos] = static_cast<char>(sendData[corruptPos] ^ 0xFF);
             }
             
+            // Pre-allocate merged wire buffer: [4B header][data][4B checksum]
+            std::vector<char> wireBuf(4 + messageSize + 4);
+            // Pre-fill header and checksum (unchanged across retransmissions)
+            std::memcpy(wireBuf.data(), &netHeader, 4);
+            std::memcpy(wireBuf.data() + 4 + messageSize, &netChecksum, 4);
+            
             // Retransmission loop
             bool delivered = false;
             int retransmits = 0;
@@ -262,16 +268,9 @@ public:
                     retransmits++;
                 }
                 
-                // Send header
-                if (!sendAll(conn, reinterpret_cast<const char*>(&netHeader), 4)) {
-                    break;
-                }
-                // Send data
-                if (!sendAll(conn, sendData.data(), messageSize)) {
-                    break;
-                }
-                // Send checksum
-                if (!sendAll(conn, reinterpret_cast<const char*>(&netChecksum), 4)) {
+                // Copy data into merged buffer and send everything once
+                std::memcpy(wireBuf.data() + 4, sendData.data(), messageSize);
+                if (!sendAll(conn, wireBuf.data(), static_cast<int>(wireBuf.size()))) {
                     break;
                 }
                 
@@ -423,7 +422,7 @@ public:
             acceptDone.store(true);
         });
         
-        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
         
         for (int i = 0; i < producers; i++) {
             producerThreads.emplace_back(&TcpIPC::producer, this, i,
@@ -436,7 +435,7 @@ public:
             t.join();
         }
         
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         
 #ifdef _WIN32
         closesocket(serverSocket);

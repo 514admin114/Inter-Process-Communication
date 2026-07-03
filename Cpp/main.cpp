@@ -6,6 +6,7 @@
 #include <iomanip>
 
 #include "utils/metrics.h"
+#include <cstdio>
 #include "shared_memory/shared_memory.h"
 #include "socket/socket_ipc.h"
 #include "tcp_ipc/tcp_ipc.h"
@@ -47,6 +48,9 @@ int main() {
         std::cerr << "Failed to create data directory" << std::endl;
         return 1;
     }
+    
+    // Remove old CSV file for clean overwrite
+    std::remove("../csv/ipc_performance_cpp.csv");
     
     // Test configuration - simplified version for quick testing
     TestConfig config;
