@@ -158,6 +158,9 @@ if filtered_df.empty:
     st.warning("根据当前过滤条件,没有可用的数据")
     st.stop()
 
+# 不受消息大小/并发数/IPC类型过滤的全量数据（用于消息大小影响、并发模式等分析）
+all_sizes_df = successful_tests[successful_tests['Language'].isin([l.upper() for l in selected_languages])].copy()
+
 # ==================== 主界面 - 概览统计 ====================
 st.markdown('<div class="sub-header">📈 概览统计</div>', unsafe_allow_html=True)
 
@@ -185,9 +188,11 @@ with col7:
 st.markdown("---")
 
 # ==================== Tab页签 ====================
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 横向对比 (同语言不同IPC)",
     "📉 纵向对比 (跨语言相同IPC)",
+    "📏 消息大小影响",
+    "👥 并发模式与准确率",
     "🎯 综合性能排名",
     "📋 详细数据表"
 ])
@@ -386,8 +391,344 @@ with tab2:
     else:
         st.warning("请至少选择一个IPC类型进行纵向对比")
 
-# ==================== Tab 3: 综合性能排名 ====================
+# ==================== Tab 3: 消息大小影响分析 ====================
 with tab3:
+    st.markdown('<div class="sub-header">消息大小对性能的影响分析</div>', unsafe_allow_html=True)
+    st.info("💡 **说明**: 此视图展示不同消息大小下，各语言各IPC方式的吞吐量与延迟变化趋势（不受侧边栏消息大小过滤影响）")
+
+    if not all_sizes_df.empty:
+        all_msg_sizes = sorted(all_sizes_df['Message_Size'].unique())
+
+        if len(all_msg_sizes) > 1:
+            # 按语言分面展示
+            for lang in selected_languages:
+                lang_data = all_sizes_df[all_sizes_df['Language'] == lang.upper()]
+                if lang_data.empty:
+                    continue
+
+                st.markdown(f"### 🖥️ {lang.upper()} - 消息大小 vs 性能")
+
+                # 按消息大小和IPC类型聚合
+                agg_data = lang_data.groupby(['Message_Size', 'IPC_Type']).agg({
+                    'Throughput_Msg_Per_Sec': 'mean',
+                    'Avg_Latency_Microseconds': 'mean'
+                }).reset_index()
+
+                col_s1, col_s2 = st.columns(2)
+
+                with col_s1:
+                    fig_size_throughput = px.line(
+                        agg_data,
+                        x='Message_Size',
+                        y='Throughput_Msg_Per_Sec',
+                        color='IPC_Type',
+                        markers=True,
+                        title=f'{lang.upper()} - 消息大小 vs 吞吐量',
+                        labels={
+                            'Message_Size': '消息大小 (字节)',
+                            'Throughput_Msg_Per_Sec': '平均吞吐量 (msg/s)',
+                            'IPC_Type': 'IPC类型'
+                        },
+                        color_discrete_sequence=px.colors.qualitative.Set2
+                    )
+                    fig_size_throughput.update_layout(height=400)
+                    st.plotly_chart(fig_size_throughput, use_container_width=True)
+
+                with col_s2:
+                    fig_size_latency = px.line(
+                        agg_data,
+                        x='Message_Size',
+                        y='Avg_Latency_Microseconds',
+                        color='IPC_Type',
+                        markers=True,
+                        title=f'{lang.upper()} - 消息大小 vs 延迟',
+                        labels={
+                            'Message_Size': '消息大小 (字节)',
+                            'Avg_Latency_Microseconds': '平均延迟 (μs)',
+                            'IPC_Type': 'IPC类型'
+                        },
+                        color_discrete_sequence=px.colors.qualitative.Pastel1
+                    )
+                    fig_size_latency.update_layout(height=400)
+                    st.plotly_chart(fig_size_latency, use_container_width=True)
+
+                st.markdown("---")
+
+            # 跨语言消息大小对比
+            st.markdown("### 🌐 跨语言消息大小对比")
+            cross_agg = all_sizes_df.groupby(['Message_Size', 'Language', 'IPC_Type']).agg({
+                'Throughput_Msg_Per_Sec': 'mean',
+                'Avg_Latency_Microseconds': 'mean'
+            }).reset_index()
+
+            col_c1, col_c2 = st.columns(2)
+
+            with col_c1:
+                fig_cross_throughput = px.line(
+                    cross_agg,
+                    x='Message_Size',
+                    y='Throughput_Msg_Per_Sec',
+                    color='Language',
+                    line_dash='IPC_Type',
+                    markers=True,
+                    title='跨语言 - 消息大小 vs 吞吐量',
+                    labels={
+                        'Message_Size': '消息大小 (字节)',
+                        'Throughput_Msg_Per_Sec': '平均吞吐量 (msg/s)',
+                        'Language': '语言',
+                        'IPC_Type': 'IPC类型'
+                    },
+                    color_discrete_sequence=px.colors.qualitative.Vivid
+                )
+                fig_cross_throughput.update_layout(height=450)
+                st.plotly_chart(fig_cross_throughput, use_container_width=True)
+
+            with col_c2:
+                fig_cross_latency = px.line(
+                    cross_agg,
+                    x='Message_Size',
+                    y='Avg_Latency_Microseconds',
+                    color='Language',
+                    line_dash='IPC_Type',
+                    markers=True,
+                    title='跨语言 - 消息大小 vs 延迟',
+                    labels={
+                        'Message_Size': '消息大小 (字节)',
+                        'Avg_Latency_Microseconds': '平均延迟 (μs)',
+                        'Language': '语言',
+                        'IPC_Type': 'IPC类型'
+                    },
+                    color_discrete_sequence=px.colors.qualitative.Bold
+                )
+                fig_cross_latency.update_layout(height=450)
+                st.plotly_chart(fig_cross_latency, use_container_width=True)
+        else:
+            st.warning("当前数据中只有一种消息大小，无法生成对比趋势图。请先运行多种消息大小的测试。")
+
+# ==================== Tab 4: 并发模式与准确率分析 ====================
+with tab4:
+    st.markdown('<div class="sub-header">并发模式影响分析</div>', unsafe_allow_html=True)
+    st.info("💡 **说明**: 此视图展示不同生产者/消费者数量组合下的性能热力图（不受侧边栏并发数过滤影响）")
+
+    if not all_sizes_df.empty:
+        # 并发模式热力图 - 吞吐量
+        st.markdown("### 🔥 并发模式热力图")
+
+        # 按生产者x消费者聚合
+        concurrency_agg = all_sizes_df.groupby(['Producer_Count', 'Consumer_Count']).agg({
+            'Throughput_Msg_Per_Sec': 'mean',
+            'Avg_Latency_Microseconds': 'mean',
+            'Accuracy': 'mean' if 'Accuracy' in all_sizes_df.columns else 'first'
+        }).reset_index()
+
+        # 构建热力图矩阵
+        prod_vals = sorted(concurrency_agg['Producer_Count'].unique())
+        cons_vals = sorted(concurrency_agg['Consumer_Count'].unique())
+
+        col_h1, col_h2 = st.columns(2)
+
+        with col_h1:
+            # 吞吐量热力图
+            throughput_matrix = []
+            for p in prod_vals:
+                row = []
+                for c in cons_vals:
+                    val = concurrency_agg[
+                        (concurrency_agg['Producer_Count'] == p) &
+                        (concurrency_agg['Consumer_Count'] == c)
+                    ]['Throughput_Msg_Per_Sec']
+                    row.append(val.values[0] if len(val) > 0 else 0)
+                throughput_matrix.append(row)
+
+            fig_heat_tp = go.Figure(data=go.Heatmap(
+                z=throughput_matrix,
+                x=[str(c) for c in cons_vals],
+                y=[str(p) for p in prod_vals],
+                colorscale='Viridis',
+                colorbar=dict(title='msg/s'),
+                text=[[f'{v:.0f}' for v in row] for row in throughput_matrix],
+                texttemplate='%{text}',
+                textfont={"size": 10}
+            ))
+            fig_heat_tp.update_layout(
+                title='生产者 x 消费者 - 平均吞吐量热力图',
+                xaxis_title='消费者数量',
+                yaxis_title='生产者数量',
+                height=450
+            )
+            st.plotly_chart(fig_heat_tp, use_container_width=True)
+
+        with col_h2:
+            # 延迟热力图
+            latency_matrix = []
+            for p in prod_vals:
+                row = []
+                for c in cons_vals:
+                    val = concurrency_agg[
+                        (concurrency_agg['Producer_Count'] == p) &
+                        (concurrency_agg['Consumer_Count'] == c)
+                    ]['Avg_Latency_Microseconds']
+                    row.append(val.values[0] if len(val) > 0 else 0)
+                latency_matrix.append(row)
+
+            fig_heat_lat = go.Figure(data=go.Heatmap(
+                z=latency_matrix,
+                x=[str(c) for c in cons_vals],
+                y=[str(p) for p in prod_vals],
+                colorscale='Plasma',
+                colorbar=dict(title='μs'),
+                text=[[f'{v:.1f}' for v in row] for row in latency_matrix],
+                texttemplate='%{text}',
+                textfont={"size": 10}
+            ))
+            fig_heat_lat.update_layout(
+                title='生产者 x 消费者 - 平均延迟热力图',
+                xaxis_title='消费者数量',
+                yaxis_title='生产者数量',
+                height=450
+            )
+            st.plotly_chart(fig_heat_lat, use_container_width=True)
+
+        # 按语言分并发模式分组柱状图
+        st.markdown("### 📊 各语言并发模式分组对比")
+
+        lang_concurrency = all_sizes_df.groupby(['Language', 'Producer_Count', 'Consumer_Count']).agg({
+            'Throughput_Msg_Per_Sec': 'mean',
+            'Avg_Latency_Microseconds': 'mean'
+        }).reset_index()
+        lang_concurrency['Concurrency'] = lang_concurrency['Producer_Count'].astype(str) + 'P-' + lang_concurrency['Consumer_Count'].astype(str) + 'C'
+
+        fig_conc_tp = px.bar(
+            lang_concurrency,
+            x='Concurrency',
+            y='Throughput_Msg_Per_Sec',
+            color='Language',
+            barmode='group',
+            title='各语言在不同并发模式下的平均吞吐量',
+            labels={
+                'Concurrency': '并发模式 (生产者-消费者)',
+                'Throughput_Msg_Per_Sec': '平均吞吐量 (msg/s)',
+                'Language': '语言'
+            },
+            color_discrete_sequence=px.colors.qualitative.Vivid
+        )
+        fig_conc_tp.update_layout(height=450, xaxis_tickangle=-45)
+        st.plotly_chart(fig_conc_tp, use_container_width=True)
+
+        st.markdown("---")
+
+        # ==================== 传输准确率分析 ====================
+        st.markdown('<div class="sub-header">传输准确率分析</div>', unsafe_allow_html=True)
+
+        if 'Accuracy' in all_sizes_df.columns:
+            col_a1, col_a2 = st.columns(2)
+
+            with col_a1:
+                # 各语言准确率箱线图
+                fig_acc_box = px.box(
+                    all_sizes_df,
+                    x='Language',
+                    y='Accuracy',
+                    color='Language',
+                    title='各语言传输准确率分布',
+                    labels={'Language': '语言', 'Accuracy': '准确率 (%)'},
+                    points="all",
+                    color_discrete_sequence=px.colors.qualitative.Vivid
+                )
+                fig_acc_box.update_layout(height=450)
+                st.plotly_chart(fig_acc_box, use_container_width=True)
+
+            with col_a2:
+                # 各IPC类型准确率箱线图
+                fig_acc_ipc = px.box(
+                    all_sizes_df,
+                    x='IPC_Type',
+                    y='Accuracy',
+                    color='Language',
+                    title='各IPC方式传输准确率分布',
+                    labels={'IPC_Type': 'IPC类型', 'Accuracy': '准确率 (%)', 'Language': '语言'},
+                    points="all",
+                    color_discrete_sequence=px.colors.qualitative.Bold
+                )
+                fig_acc_ipc.update_layout(height=450)
+                st.plotly_chart(fig_acc_ipc, use_container_width=True)
+
+            # 各语言各IPC方式平均准确率柱状图
+            acc_agg = all_sizes_df.groupby(['Language', 'IPC_Type'])['Accuracy'].mean().reset_index()
+            fig_acc_bar = px.bar(
+                acc_agg,
+                x='Language',
+                y='Accuracy',
+                color='IPC_Type',
+                barmode='group',
+                title='各语言不同IPC方式平均准确率',
+                labels={'Language': '语言', 'Accuracy': '平均准确率 (%)', 'IPC_Type': 'IPC类型'},
+                color_discrete_sequence=px.colors.qualitative.Set2
+            )
+            fig_acc_bar.update_layout(height=400)
+            st.plotly_chart(fig_acc_bar, use_container_width=True)
+        else:
+            st.warning("数据中没有 Accuracy 列，无法生成准确率图表")
+
+        st.markdown("---")
+
+        # ==================== 总测试耗时分析 ====================
+        st.markdown('<div class="sub-header">总测试耗时分析</div>', unsafe_allow_html=True)
+
+        if 'Total_Time_Seconds' in all_sizes_df.columns:
+            col_t1, col_t2 = st.columns(2)
+
+            with col_t1:
+                # 各语言总耗时对比
+                time_by_lang = all_sizes_df.groupby('Language')['Total_Time_Seconds'].sum().reset_index()
+                fig_time_bar = px.bar(
+                    time_by_lang,
+                    x='Language',
+                    y='Total_Time_Seconds',
+                    color='Language',
+                    title='各语言总测试耗时',
+                    labels={'Language': '语言', 'Total_Time_Seconds': '总耗时 (秒)'},
+                    color_discrete_sequence=px.colors.qualitative.Vivid,
+                    text_auto='.1f'
+                )
+                fig_time_bar.update_layout(height=450)
+                st.plotly_chart(fig_time_bar, use_container_width=True)
+
+            with col_t2:
+                # 各语言各IPC方式耗时对比
+                time_by_ipc = all_sizes_df.groupby(['Language', 'IPC_Type'])['Total_Time_Seconds'].sum().reset_index()
+                fig_time_ipc = px.bar(
+                    time_by_ipc,
+                    x='Language',
+                    y='Total_Time_Seconds',
+                    color='IPC_Type',
+                    barmode='group',
+                    title='各语言不同IPC方式总耗时',
+                    labels={'Language': '语言', 'Total_Time_Seconds': '总耗时 (秒)', 'IPC_Type': 'IPC类型'},
+                    color_discrete_sequence=px.colors.qualitative.Set2,
+                    text_auto='.1f'
+                )
+                fig_time_ipc.update_layout(height=450)
+                st.plotly_chart(fig_time_ipc, use_container_width=True)
+
+            # 各语言耗时箱线图
+            fig_time_box = px.box(
+                all_sizes_df,
+                x='Language',
+                y='Total_Time_Seconds',
+                color='Language',
+                title='各语言单次测试耗时分布',
+                labels={'Language': '语言', 'Total_Time_Seconds': '耗时 (秒)'},
+                points="all",
+                color_discrete_sequence=px.colors.qualitative.Bold
+            )
+            fig_time_box.update_layout(height=400)
+            st.plotly_chart(fig_time_box, use_container_width=True)
+        else:
+            st.warning("数据中没有 Total_Time_Seconds 列，无法生成耗时图表")
+
+# ==================== Tab 5: 综合性能排名 ====================
+with tab5:
     st.markdown('<div class="sub-header">综合性能排名与最佳实践</div>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
@@ -487,8 +828,8 @@ with tab3:
             
             st.plotly_chart(fig_radar, use_container_width=True)
 
-# ==================== Tab 4: 详细数据表 ====================
-with tab4:
+# ==================== Tab 6: 详细数据表 ====================
+with tab6:
     st.markdown('<div class="sub-header">详细数据表格</div>', unsafe_allow_html=True)
     
     # 显示列选择器
